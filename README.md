@@ -236,7 +236,9 @@ FastAPI application that manages task lifecycle, worker registry, and scheduling
 
 ### Worker (`figaro-worker/`)
 
-A Claude computer use agent running inside a full containerized Linux desktop (Fluxbox + TigerVNC + Chromium). The agent sees and interacts with the desktop like a human would -- taking screenshots, moving the mouse, clicking elements, typing text, and navigating between applications. Task progress is streamed to JetStream and the desktop is exposed via noVNC for live viewing in the dashboard.
+A Claude computer use agent that executes browser automation tasks via the claude-agent-sdk. The agent sees and interacts with a desktop like a human would -- taking screenshots, moving the mouse, clicking elements, typing text, and navigating between applications. It has its own set of skills (custom tools) and can run shell commands. Task progress is streamed to JetStream.
+
+The worker is a standalone service that can run on any machine with a desktop environment. In Docker, it runs inside a containerized Linux desktop (Fluxbox + TigerVNC + Chromium + noVNC) provided by the container image, but it can also run directly on a physical or virtual machine -- see [Connecting External Desktops](#connecting-external-desktops).
 
 **Stack:** Bun (compiled native binary), `@anthropic-ai/claude-agent-sdk`, NATS
 
