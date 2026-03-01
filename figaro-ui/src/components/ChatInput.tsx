@@ -47,7 +47,7 @@ export function ChatInput() {
     [handleSubmit]
   );
 
-  const idleWorkers = workers.filter((w) => w.status === 'idle');
+  const idleWorkers = workers.filter((w) => w.status === 'idle' && w.agent_connected);
   const hasIdleWorker = idleWorkers.length > 0 || workers.length === 0;
   // For 'auto' mode, we can submit if either supervisor or worker is available
   const canSubmit =
@@ -82,8 +82,8 @@ export function ChatInput() {
           >
             <option value="">Any idle worker</option>
             {workers.map((w) => (
-              <option key={w.id} value={w.id} disabled={w.status === 'busy'}>
-                {w.id.slice(0, 8)} ({w.status})
+              <option key={w.id} value={w.id} disabled={w.status === 'busy' || !w.agent_connected}>
+                {w.id.slice(0, 8)} ({!w.agent_connected ? 'no agent' : w.status})
               </option>
             ))}
           </select>
