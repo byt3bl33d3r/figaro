@@ -155,7 +155,7 @@ This is useful when you want to connect existing physical machines or VMs to Fig
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/scheduled_task.png">
   <source media="(prefers-color-scheme: light)" srcset="docs/scheduled_task.png">
-  <img width="951" height="1318" alt="Figaro Scheduled Tasks" src="docs/scheduled_task.png">
+  <img width="600" alt="Figaro Scheduled Tasks" src="docs/scheduled_task.png">
 </picture>
 </p>
 
