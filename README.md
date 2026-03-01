@@ -3,7 +3,11 @@
 [![Code LLM Generated (with a lot of human oversight)](https://img.shields.io/badge/code-LLM%20generated%20(with%20a%20lot%20of%20human%20oversight)-ff69b4)](https://en.wiktionary.org/wiki/vibecoding)
 
 <p align="center">
-  <img width="384" height="384" alt="Image" src="https://github.com/user-attachments/assets/1da03f7c-de10-482f-b215-0aa2df7f68f6" />
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="docs/figaro_logo.png">
+    <source media="(prefers-color-scheme: light)" srcset="docs/figaro_logo.png">
+    <img width="384" height="384" alt="Figaro Logo" src="docs/figaro_logo.png">
+  </picture>
 </p>
 
 
@@ -15,13 +19,10 @@ The system is built for long-running tasks that take minutes to hours. All servi
 
 You can also manage everything by chatting with the supervisor agent through the gateway -- for example, via Telegram. Send it natural language instructions to create tasks, schedule recurring jobs, check worker status, or ask questions about running tasks. The supervisor understands the full system and can delegate work to workers, inspect desktops via VNC, and report back results, all through a conversational interface.
 
-## UI Action shot
-
-<img width="1389" height="1317" alt="Image" src="https://github.com/user-attachments/assets/ede0b548-22f4-4bd5-a89d-f1ff77a6c9e4" />
-
 ## Table of Contents
 
 - [Quick Start](#quick-start)
+- [Advanced Setup](#advanced-setup)
 - [Connecting External Desktops](#connecting-external-desktops)
 - [Scheduled Tasks](#scheduled-tasks)
 - [Self-Healing](#self-healing)
@@ -36,42 +37,71 @@ You can also manage everything by chatting with the supervisor agent through the
 - [Testing](#testing)
 - [Contributing](#contributing)
 
+## UI Action shot
+
+<p align="center">
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/ui_shot.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/ui_shot.png">
+  <img width="900" alt="Figaro Dashboard" src="docs/ui_shot.png">
+</picture>
+</p>
+
 ## Quick Start
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/byt3bl33d3r/figaro/main/install.sh | bash
+```
+
+Or clone and run directly:
+
+```bash
+git clone https://github.com/byt3bl33d3r/figaro.git && cd figaro && ./install.sh
+```
+
+By default the install script uses the `prod-local` overlay, Figaro will be available at `http://localhost:8000`.
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- Claude credentials (`~/.claude.json` and `~/.claude/.credentials.json`) -- created by running `claude` and signing in. On MacOS (assuming you have a Claude Code subscription) once logged in, you can export the credentials file for use in containers with the following command:
+- **Docker and Docker Compose** -- on Linux the install script will install Docker automatically via [get.docker.com](https://get.docker.com). On macOS you must install [Docker Desktop](https://docs.docker.com/desktop/setup/install/mac-install/) manually before running the script.
+- Claude credentials (`~/.claude.json` and `~/.claude/.credentials.json`) -- created by running `claude` and signing in. On macOS (assuming you have a Claude Code subscription) once logged in, you can export the credentials file for use in containers with the following command:
   ```bash
   security find-generic-password -s "Claude Code-credentials" -w > ~/.claude/.credentials.json
   ```
-- An OpenAI API key (Optional, only used for `patchright-cli` transcription functionality)
+### Optional
 
-### Setup
+- An OpenAI API key (used for `patchright-cli` transcription functionality)
+- A Telegram bot token (enables chatting with the supervisor agent via Telegram for task submission, status checks, and notifications). Create a bot via [@BotFather](https://t.me/BotFather) and set `GATEWAY_TELEGRAM_BOT_TOKEN` and `GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS` in your `.env`
+
+## Advanced Setup
+
+> [!NOTE]
+> The `install.sh` script does this for you.
 
 ```bash
 cp .env.example .env
-# Edit .env and set OPENAI_API_KEY
+# Optional: set an OPENAPI_API_KEY
+# OPENAI_API_KEY=sk-proj-example
 # Optional: set Telegram gateway variables for notifications and task submission
 # GATEWAY_TELEGRAM_BOT_TOKEN=your-bot-token
 # GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS=["your-chat-id"]
 ```
 
-The base `docker-compose.yml` defines all shared services but does **not** expose ports. Choose an overlay for your deployment scenario:
+The base `docker/docker-compose.yml` defines all shared services but does **not** expose ports. Choose an overlay for your deployment scenario:
 
 ```bash
 # Production, localhost-only (recommended) -- ports bound to 127.0.0.1
-docker compose -f docker-compose.yml -f docker-compose.prod-local.yml up --build
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod-local.yml up --build
 
 # Development -- localhost ports + a desktop service for testing VNC
-docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up --build
 ```
 
 > [!CAUTION]
-> The `docker-compose.prod.yml` overlay binds ports to `0.0.0.0`, making NATS and the orchestrator accessible from any network interface. Only use this if you understand the security implications and have appropriate firewall rules in place. Please read [Security](#security) to understand known attack surface.
+> The `docker/docker-compose.prod.yml` overlay binds ports to `0.0.0.0`, making NATS and the orchestrator accessible from any network interface. Only use this if you understand the security implications and have appropriate firewall rules in place. Please read [Security](#security) to understand known attack surface.
 >
 > ```bash
-> docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build
+> docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod.yml up --build
 > ```
 
 Open `http://localhost:8000`.
@@ -81,14 +111,14 @@ This starts PostgreSQL, NATS (port 8443), the orchestrator (port 8000), 2 worker
 ### Scaling
 
 ```bash
-docker compose -f docker-compose.yml -f docker-compose.prod-local.yml up --build --scale worker=4 --scale supervisor=3
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod-local.yml up --build --scale worker=4 --scale supervisor=3
 ```
 
 ### Teardown
 
 ```bash
-docker compose down       # Stop services
-docker compose down -v    # Stop and remove all data
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod-local.yml down       # Stop services
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod-local.yml down -v    # Stop and remove all data
 ```
 
 ## Connecting External Desktops
@@ -122,7 +152,11 @@ This is useful when you want to connect existing physical machines or VMs to Fig
 ## Scheduled Tasks
 
 <p align="center">
-<img width="951" height="1318" alt="Image" src="https://github.com/user-attachments/assets/f508f535-9909-4942-8400-e4115b70b039" />
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/scheduled_task.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/scheduled_task.png">
+  <img width="951" height="1318" alt="Figaro Scheduled Tasks" src="docs/scheduled_task.png">
+</picture>
 </p>
 
 Figaro supports cron-like scheduling for recurring tasks. Scheduled tasks are managed through the UI or directly by chatting to Figaro via Telegram or whatever channel is configured in the Gateway.
@@ -365,7 +399,7 @@ uv run alembic revision --autogenerate -m "description"  # Create new migration
 
 ### NATS Configuration
 
-The NATS server runs with JetStream enabled, WebSocket on port 8443 (no TLS), and HTTP monitoring on port 8222. See `nats.conf` for the full configuration.
+The NATS server runs with JetStream enabled, WebSocket on port 8443 (no TLS), and HTTP monitoring on port 8222. See `docker/nats.conf` for the full configuration.
 
 ## NATS Subject Design
 

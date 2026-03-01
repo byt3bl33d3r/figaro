@@ -277,6 +277,11 @@ npm run build            # TypeScript check + Vite build (required)
 npm run test             # Vitest (required)
 ```
 
+**Shell scripts (*.sh):**
+```bash
+shellcheck <file>.sh     # Lint (required)
+```
+
 ## Environment Variables
 
 | Variable | Component | Description |
