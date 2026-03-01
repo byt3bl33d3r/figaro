@@ -193,7 +193,7 @@ async def test_take_screenshot():
             "max_width": 1280,
             "max_height": 800,
         },
-        timeout=10.0,
+        timeout=30.0,
     )
 
 
@@ -218,7 +218,7 @@ async def test_type_text():
     client.conn.request.assert_awaited_once_with(
         Subjects.API_VNC,
         {"action": "type", "worker_id": "w1", "text": "hello world"},
-        timeout=10.0,
+        timeout=30.0,
     )
 
 
@@ -240,7 +240,7 @@ async def test_press_key():
             "key": "c",
             "modifiers": ["ctrl", "shift"],
         },
-        timeout=10.0,
+        timeout=30.0,
     )
 
 
@@ -255,7 +255,7 @@ async def test_press_key_no_modifiers():
     client.conn.request.assert_awaited_once_with(
         Subjects.API_VNC,
         {"action": "key", "worker_id": "w1", "key": "Enter", "modifiers": []},
-        timeout=10.0,
+        timeout=30.0,
     )
 
 
@@ -278,7 +278,7 @@ async def test_press_key_hold_seconds():
             "modifiers": [],
             "hold_seconds": 3.0,
         },
-        timeout=10.0,
+        timeout=30.0,
     )
 
 
@@ -306,7 +306,7 @@ async def test_click():
     client.conn.request.assert_awaited_once_with(
         Subjects.API_VNC,
         {"action": "click", "worker_id": "w1", "x": 100, "y": 200, "button": "right"},
-        timeout=10.0,
+        timeout=30.0,
     )
 
 
@@ -321,7 +321,7 @@ async def test_click_default_button():
     client.conn.request.assert_awaited_once_with(
         Subjects.API_VNC,
         {"action": "click", "worker_id": "w1", "x": 50, "y": 75, "button": "left"},
-        timeout=10.0,
+        timeout=30.0,
     )
 
 
@@ -348,7 +348,7 @@ async def test_click_scales_coordinates_after_screenshot():
     client.conn.request.assert_awaited_once_with(
         Subjects.API_VNC,
         {"action": "click", "worker_id": "w1", "x": 300, "y": 600, "button": "left"},
-        timeout=10.0,
+        timeout=30.0,
     )
 
 
@@ -431,7 +431,7 @@ async def test_send_screenshot_success():
             "max_width": 1280,
             "max_height": 800,
         },
-        timeout=10.0,
+        timeout=30.0,
     )
 
     # Should have published the screenshot to the gateway
@@ -692,6 +692,90 @@ async def test_create_scheduled_task_default_max_runs():
 
     payload = client.conn.request.call_args[0][1]
     assert payload["max_runs"] is None
+
+
+@pytest.mark.asyncio
+async def test_unlock_screen():
+    """unlock_screen sends the correct NATS payload with defaults and returns ok."""
+    tools, client = _make_vnc_tools_client({"ok": True})
+    result = await tools["unlock_screen"]({"worker_id": "w1"})
+
+    parsed = json.loads(result["content"][0]["text"])
+    assert parsed["ok"] is True
+    client.conn.request.assert_awaited_once_with(
+        Subjects.API_VNC,
+        {
+            "action": "unlock",
+            "worker_id": "w1",
+            "click_screen": False,
+            "username": False,
+        },
+        timeout=30.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_unlock_screen_with_options():
+    """unlock_screen sends click_screen and username flags when provided."""
+    tools, client = _make_vnc_tools_client({"ok": True})
+    result = await tools["unlock_screen"](
+        {"worker_id": "w1", "click_screen": True, "username": True}
+    )
+
+    parsed = json.loads(result["content"][0]["text"])
+    assert parsed["ok"] is True
+    client.conn.request.assert_awaited_once_with(
+        Subjects.API_VNC,
+        {
+            "action": "unlock",
+            "worker_id": "w1",
+            "click_screen": True,
+            "username": True,
+        },
+        timeout=30.0,
+    )
+
+
+@pytest.mark.asyncio
+async def test_unlock_screen_error():
+    """unlock_screen propagates an error response."""
+    tools, _client = _make_vnc_tools_client({"error": "No VNC password configured for this worker"})
+    result = await tools["unlock_screen"]({"worker_id": "w1"})
+
+    assert result["content"][0]["type"] == "text"
+    assert "No VNC password configured" in result["content"][0]["text"]
+
+
+@pytest.mark.asyncio
+async def test_list_workers_strips_credentials():
+    """list_workers strips vnc_username and vnc_password from each worker dict."""
+    api_response = {
+        "workers": [
+            {
+                "worker_id": "w1",
+                "status": "idle",
+                "vnc_username": "admin",
+                "vnc_password": "secret",
+            },
+            {
+                "worker_id": "w2",
+                "status": "busy",
+                "vnc_username": "user2",
+                "vnc_password": "pass2",
+            },
+        ]
+    }
+    tools, _client = _make_vnc_tools_client(api_response)
+    result = await tools["list_workers"]({})
+
+    parsed = json.loads(result["content"][0]["text"])
+    assert isinstance(parsed, dict)
+    workers = parsed["workers"]
+    for worker in workers:
+        assert "vnc_username" not in worker
+        assert "vnc_password" not in worker
+    assert workers[0]["worker_id"] == "w1"
+    assert workers[1]["worker_id"] == "w2"
 
 
 @pytest.mark.asyncio

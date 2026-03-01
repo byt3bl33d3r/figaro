@@ -284,6 +284,43 @@ async def click_with_client(
     await asyncio.sleep(0.05)
 
 
+async def unlock_with_client(
+    client: asyncvnc.Client,
+    password: str,
+    username: str | None = None,
+    click_screen: bool = False,
+) -> None:
+    """Unlock a desktop lock screen using an already-connected client.
+
+    Performs the unlock sequence server-side so credentials never leave the
+    orchestrator process.
+
+    When *click_screen* is ``True``, clicks the centre of the screen first
+    to wake the display.  When *username* is provided, types the username
+    and presses Tab before typing the password.  Always finishes by pressing
+    Enter.
+    """
+    if click_screen:
+        # Click centre of screen to wake the display
+        w = client.video.width
+        h = client.video.height
+        client.mouse.move(w // 2, h // 2)
+        await asyncio.sleep(0.05)
+        client.mouse.click()
+        await asyncio.sleep(0.5)
+
+    if username is not None:
+        client.keyboard.write(username)
+        await asyncio.sleep(0.05)
+        client.keyboard.press("Tab")
+        await asyncio.sleep(0.2)
+
+    client.keyboard.write(password)
+    await asyncio.sleep(0.05)
+    client.keyboard.press("Return")
+    await asyncio.sleep(0.05)
+
+
 # ---------------------------------------------------------------------------
 # Standalone functions — open a new connection per call (backward compat)
 # ---------------------------------------------------------------------------

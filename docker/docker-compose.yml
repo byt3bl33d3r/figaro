@@ -47,7 +47,7 @@ services:
     networks:
       - figaro-net
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/api/workers"]
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/config"]
       interval: 10s
       timeout: 5s
       retries: 3

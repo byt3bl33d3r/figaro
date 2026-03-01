@@ -504,6 +504,81 @@ class TestApiVncWssSchemeRouting:
         assert captured["username"] is None
 
 
+class TestApiVncUnlock:
+    """Test _api_vnc unlock action."""
+
+    async def test_api_vnc_unlock(self, nats_service, registry):
+        """Unlock with default args calls unlock_with_client with password only."""
+        await _register_worker(registry)
+        mock_client = MagicMock()
+        nats_service._vnc_pool.connection = _mock_pool_connection(mock_client)
+
+        with patch(
+            "figaro.services.nats_service.unlock_with_client",
+            new_callable=AsyncMock,
+        ) as mock_unlock:
+            result = await nats_service._api_vnc(
+                {"worker_id": "worker-1", "action": "unlock"}
+            )
+
+        assert result == {"ok": True}
+        mock_unlock.assert_awaited_once_with(
+            mock_client, "vscode", username=None, click_screen=False,
+        )
+
+    async def test_api_vnc_unlock_with_click_screen(self, nats_service, registry):
+        """click_screen=True is passed through to unlock_with_client."""
+        await _register_worker(registry)
+        mock_client = MagicMock()
+        nats_service._vnc_pool.connection = _mock_pool_connection(mock_client)
+
+        with patch(
+            "figaro.services.nats_service.unlock_with_client",
+            new_callable=AsyncMock,
+        ) as mock_unlock:
+            result = await nats_service._api_vnc(
+                {"worker_id": "worker-1", "action": "unlock", "click_screen": True}
+            )
+
+        assert result == {"ok": True}
+        mock_unlock.assert_awaited_once_with(
+            mock_client, "vscode", username=None, click_screen=True,
+        )
+
+    async def test_api_vnc_unlock_with_username(self, nats_service, registry):
+        """username=True resolves the username from credentials and passes it through."""
+        await _register_worker(registry)
+        nats_service._settings.vnc_username = "desktopuser"
+        mock_client = MagicMock()
+        nats_service._vnc_pool.connection = _mock_pool_connection(mock_client)
+
+        with patch(
+            "figaro.services.nats_service.unlock_with_client",
+            new_callable=AsyncMock,
+        ) as mock_unlock:
+            result = await nats_service._api_vnc(
+                {"worker_id": "worker-1", "action": "unlock", "username": True}
+            )
+
+        assert result == {"ok": True}
+        mock_unlock.assert_awaited_once_with(
+            mock_client, "vscode", username="desktopuser", click_screen=False,
+        )
+
+    async def test_api_vnc_unlock_no_password(self, nats_service, registry, mock_settings):
+        """Unlock returns error when no password is configured."""
+        mock_settings.vnc_password = None
+        await _register_worker(registry)
+        mock_client = MagicMock()
+        nats_service._vnc_pool.connection = _mock_pool_connection(mock_client)
+
+        result = await nats_service._api_vnc(
+            {"worker_id": "worker-1", "action": "unlock"}
+        )
+
+        assert result == {"error": "No VNC password configured for this worker"}
+
+
 class TestApiVncVncSchemeRouting:
     """Test that vnc:// URLs use pool.connection() with port from URL."""
 

@@ -178,9 +178,12 @@ def create_tools_server(
     ) -> dict[str, Any]:
         """Send a NATS request with error handling."""
         try:
-            return await conn.request(subject, data, timeout=timeout)
+            result = await conn.request(subject, data, timeout=timeout)
+            if result.get("error"):
+                logger.error(f"NATS request {subject} returned error: {result['error']}")
+            return result
         except Exception as e:
-            logger.error(f"NATS request failed on {subject}: {e}")
+            logger.error(f"NATS request {subject} failed (timeout={timeout:.0f}s): {e}")
             return {"error": f"Request failed: {e}"}
 
     @tool(
@@ -230,12 +233,19 @@ def create_tools_server(
     @tool(
         "list_workers",
         "Get list of connected workers and their status. "
-        "Returns worker details including desktop credentials (vnc_username, vnc_password) "
-        "which can be used to unlock lock screens via the VNC tools (type_text, press_key).",
+        "Use unlock_screen to unlock lock screens on worker desktops.",
         {},
     )
     async def list_workers(args: dict[str, Any]) -> dict[str, Any]:
-        return _result(await _request(Subjects.API_WORKERS, {}))
+        result = await _request(Subjects.API_WORKERS, {})
+        # Strip credentials — unlock_screen handles them server-side
+        workers = result.get("workers", []) if isinstance(result, dict) else result
+        if isinstance(workers, list):
+            for worker in workers:
+                if isinstance(worker, dict):
+                    worker.pop("vnc_username", None)
+                    worker.pop("vnc_password", None)
+        return _result(result)
 
     @tool(
         "list_tasks",
@@ -440,6 +450,7 @@ def create_tools_server(
                 "max_width": 1280,
                 "max_height": 800,
             },
+            timeout=30.0,
         )
         if response.get("error"):
             return _error(response["error"])
@@ -488,6 +499,7 @@ def create_tools_server(
         response = await _request(
             Subjects.API_VNC,
             {"action": "type", "worker_id": args["worker_id"], "text": args["text"]},
+            timeout=30.0,
         )
         if response.get("error"):
             return _error(response["error"])
@@ -529,7 +541,7 @@ def create_tools_server(
         }
         if args.get("hold_seconds"):
             payload["hold_seconds"] = args["hold_seconds"]
-        response = await _request(Subjects.API_VNC, payload)
+        response = await _request(Subjects.API_VNC, payload, timeout=30.0)
         if response.get("error"):
             return _error(response["error"])
         return _result({"ok": True})
@@ -579,6 +591,48 @@ def create_tools_server(
                 "y": y,
                 "button": args.get("button", "left"),
             },
+            timeout=30.0,
+        )
+        if response.get("error"):
+            return _error(response["error"])
+        return _result({"ok": True})
+
+    @tool(
+        "unlock_screen",
+        "Unlock a worker's desktop lock screen. Desktop credentials are handled "
+        "server-side and are not exposed to this conversation. Use click_screen=True "
+        "to wake the display first, and username=True if a username field is visible.",
+        {
+            "type": "object",
+            "properties": {
+                "worker_id": {
+                    "type": "string",
+                    "description": "The worker ID to unlock",
+                },
+                "click_screen": {
+                    "type": "boolean",
+                    "description": "Click centre of screen first to wake the display",
+                    "default": False,
+                },
+                "username": {
+                    "type": "boolean",
+                    "description": "Type the desktop username before the password",
+                    "default": False,
+                },
+            },
+            "required": ["worker_id"],
+        },
+    )
+    async def unlock_screen(args: dict[str, Any]) -> dict[str, Any]:
+        response = await _request(
+            Subjects.API_VNC,
+            {
+                "action": "unlock",
+                "worker_id": args["worker_id"],
+                "click_screen": args.get("click_screen", False),
+                "username": args.get("username", False),
+            },
+            timeout=30.0,
         )
         if response.get("error"):
             return _error(response["error"])
@@ -617,6 +671,7 @@ def create_tools_server(
                 "max_width": 1280,
                 "max_height": 800,
             },
+            timeout=30.0,
         )
         if response.get("error"):
             return _error(response["error"])
@@ -652,6 +707,7 @@ def create_tools_server(
             type_text,
             press_key,
             click,
+            unlock_screen,
             send_screenshot,
         ],
     )

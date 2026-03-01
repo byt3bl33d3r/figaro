@@ -19,6 +19,7 @@ from figaro.services.vnc_client import (
     parse_vnc_url,
     screenshot_with_client,
     type_with_client,
+    unlock_with_client,
 )
 from figaro.services.vnc_pool import VncConnectionPool
 from figaro.db.repositories.desktop_workers import DesktopWorkerRepository
@@ -651,7 +652,7 @@ class NatsService:
     async def _handle_gateway_channel_register(self, data: dict[str, Any]) -> None:
         """Track gateway channel registrations."""
         channel = data.get("channel", "")
-        if channel:
+        if channel and channel not in self._gateway_channels:
             self._gateway_channels.add(channel)
             logger.info(f"Gateway channel registered: {channel}")
 
@@ -1406,9 +1407,12 @@ class NatsService:
         worker_id = data.get("worker_id", "")
         action = data.get("action", "")
 
+        logger.info("VNC %s requested for worker %s", action, worker_id)
+
         # Look up worker in registry
         conn = await self._registry.get_connection(worker_id)
         if conn is None:
+            logger.warning("VNC %s: worker %s not found in registry", action, worker_id)
             return {"error": "Worker not found"}
 
         # Extract VNC host/port/credentials from worker's URL
@@ -1425,16 +1429,19 @@ class NatsService:
 
             if parsed.scheme == "wss":
                 # WebSocket mode — tunnel through websockify (raw VNC port not accessible)
+                logger.debug("VNC %s: using WebSocket connection to %s", action, novnc_url)
                 ctx = self._vnc_pool.ws_connection(
                     novnc_url, username=username, password=password,
                 )
             elif parsed.scheme == "vnc":
                 # Raw TCP mode — URL points directly at VNC server
+                logger.debug("VNC %s: using TCP connection to %s:%d", action, url_host, url_port)
                 ctx = self._vnc_pool.connection(
                     url_host, url_port, username=username, password=password,
                 )
             else:
                 # ws:// or other — host is reachable, use raw VNC port
+                logger.debug("VNC %s: using TCP connection to %s:%d", action, url_host, self._settings.vnc_port)
                 ctx = self._vnc_pool.connection(
                     url_host, self._settings.vnc_port,
                     username=username, password=password,
@@ -1449,6 +1456,10 @@ class NatsService:
                         await screenshot_with_client(
                             client, quality, max_width, max_height,
                         )
+                    )
+                    logger.info(
+                        "VNC screenshot for worker %s: %dx%d -> %dx%d",
+                        worker_id, orig_w, orig_h, disp_w, disp_h,
                     )
                     return {
                         "image": image,
@@ -1472,8 +1483,25 @@ class NatsService:
                         client, data["x"], data["y"], data.get("button", "left"),
                     )
                     return {"ok": True}
+                elif action == "unlock":
+                    if not password:
+                        logger.warning("VNC unlock: no password configured for worker %s", worker_id)
+                        return {"error": "No VNC password configured for this worker"}
+                    await unlock_with_client(
+                        client,
+                        password,
+                        username=username if data.get("username") else None,
+                        click_screen=data.get("click_screen", False),
+                    )
+                    return {"ok": True}
                 else:
+                    logger.warning("VNC unknown action '%s' for worker %s", action, worker_id)
                     return {"error": f"Unknown action: {action}"}
+        except asyncio.TimeoutError:
+            logger.error(
+                "VNC %s timed out for worker %s (url=%s)", action, worker_id, novnc_url
+            )
+            return {"error": f"VNC connection timed out for worker {worker_id}"}
         except Exception as e:
             logger.exception("VNC %s failed for worker %s", action, worker_id)
             return {"error": str(e)}

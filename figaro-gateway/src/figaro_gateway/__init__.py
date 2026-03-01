@@ -20,6 +20,7 @@ async def run_gateway() -> None:
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
+    logging.getLogger("httpx").setLevel(logging.WARNING)
 
     registry = ChannelRegistry()
     router = NatsRouter(
@@ -29,12 +30,16 @@ async def run_gateway() -> None:
 
     # Register enabled channels
     if settings.telegram_bot_token:
+        if not settings.telegram_allowed_chat_ids:
+            logger.warning("GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS is not set — Telegram bot will ignore all messages")
         telegram = TelegramChannel(
             bot_token=settings.telegram_bot_token,
             allowed_chat_ids=settings.telegram_allowed_chat_ids,
         )
         registry.register(telegram)
         logger.info("Telegram channel registered")
+    else:
+        logger.warning("GATEWAY_TELEGRAM_BOT_TOKEN is not set — Telegram channel disabled")
 
     # Start router (connects to NATS, starts channels, sets up subscriptions)
     await router.start()

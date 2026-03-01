@@ -64,9 +64,11 @@ class VncConnectionPool:
         self,
         idle_timeout: int = 60,
         sweep_interval: int = 15,
+        connect_timeout: float = 15.0,
     ) -> None:
         self._idle_timeout = idle_timeout
         self._sweep_interval = sweep_interval
+        self._connect_timeout = connect_timeout
         self._entries: dict[str, _PoolEntry] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._sweep_task: asyncio.Task[None] | None = None
@@ -115,8 +117,8 @@ class VncConnectionPool:
             client = await self._acquire_tcp(key, host, port, username, password)
             try:
                 yield client
-            except (ConnectionError, BrokenPipeError, OSError):
-                # Connection broke — evict and re-raise
+            except (ConnectionError, BrokenPipeError, OSError) as exc:
+                logger.error("VNC TCP connection broke for %s: %s", key, exc)
                 await self._evict(key)
                 raise
             else:
@@ -148,7 +150,8 @@ class VncConnectionPool:
                 BrokenPipeError,
                 OSError,
                 websockets.exceptions.ConnectionClosed,
-            ):
+            ) as exc:
+                logger.error("VNC WebSocket connection broke for %s: %s", key, exc)
                 await self._evict(key)
                 raise
             else:
@@ -169,16 +172,41 @@ class VncConnectionPool:
         """Return a pooled TCP client, creating a new one if necessary."""
         entry = self._entries.get(key)
         if entry is not None and not entry.is_stale:
+            logger.debug("VNC pool: reusing TCP connection %s", key)
             return entry.client
 
         # Stale entry — clean it up
         if entry is not None:
+            logger.info("VNC pool: evicting stale TCP connection %s", key)
             await entry.close()
             del self._entries[key]
 
-        # Create a fresh connection
-        reader, writer = await asyncio.open_connection(host, port)
-        client = await asyncvnc.Client.create(reader, writer, username, password)
+        # Create a fresh connection (with timeout to avoid blocking on unreachable hosts)
+        logger.info("VNC pool: connecting TCP to %s:%d (timeout=%.0fs)", host, port, self._connect_timeout)
+        try:
+            reader, writer = await asyncio.wait_for(
+                asyncio.open_connection(host, port), timeout=self._connect_timeout
+            )
+        except asyncio.TimeoutError:
+            logger.error("VNC pool: TCP connect to %s:%d timed out after %.0fs", host, port, self._connect_timeout)
+            raise
+        except OSError as exc:
+            logger.error("VNC pool: TCP connect to %s:%d failed: %s", host, port, exc)
+            raise
+        try:
+            client = await asyncio.wait_for(
+                asyncvnc.Client.create(reader, writer, username, password),
+                timeout=self._connect_timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.error("VNC pool: RFB handshake with %s:%d timed out after %.0fs", host, port, self._connect_timeout)
+            writer.close()
+            raise
+        except Exception as exc:
+            logger.error("VNC pool: RFB handshake with %s:%d failed: %s", host, port, exc)
+            writer.close()
+            raise
+        logger.info("VNC pool: TCP connection to %s established", key)
         self._entries[key] = _PoolEntry(client, writer)
         return client
 
@@ -192,18 +220,43 @@ class VncConnectionPool:
         """Return a pooled WebSocket client, creating a new one if necessary."""
         entry = self._entries.get(key)
         if entry is not None and not entry.is_stale:
+            logger.debug("VNC pool: reusing WebSocket connection %s", key)
             return entry.client
 
         if entry is not None:
+            logger.info("VNC pool: evicting stale WebSocket connection %s", key)
             await entry.close()
             del self._entries[key]
 
-        ws = await websockets.connect(url, ping_interval=None)
+        logger.info("VNC pool: connecting WebSocket to %s (timeout=%.0fs)", url, self._connect_timeout)
+        try:
+            ws = await asyncio.wait_for(
+                websockets.connect(url, ping_interval=None), timeout=self._connect_timeout
+            )
+        except asyncio.TimeoutError:
+            logger.error("VNC pool: WebSocket connect to %s timed out after %.0fs", url, self._connect_timeout)
+            raise
+        except Exception as exc:
+            logger.error("VNC pool: WebSocket connect to %s failed: %s", url, exc)
+            raise
         adapter = WsVncAdapter(ws)
         await adapter.start()
-        client = await asyncvnc.Client.create(
-            adapter.reader, adapter.writer, username, password
-        )
+        try:
+            client = await asyncio.wait_for(
+                asyncvnc.Client.create(
+                    adapter.reader, adapter.writer, username, password
+                ),
+                timeout=self._connect_timeout,
+            )
+        except asyncio.TimeoutError:
+            logger.error("VNC pool: RFB handshake over WebSocket %s timed out after %.0fs", url, self._connect_timeout)
+            await adapter.close()
+            raise
+        except Exception as exc:
+            logger.error("VNC pool: RFB handshake over WebSocket %s failed: %s", url, exc)
+            await adapter.close()
+            raise
+        logger.info("VNC pool: WebSocket connection to %s established", key)
         self._entries[key] = _PoolEntry(client, writer=None, adapter=adapter)
         return client
 

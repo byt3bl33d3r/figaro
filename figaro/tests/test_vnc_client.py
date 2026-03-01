@@ -12,6 +12,7 @@ from figaro.services.vnc_client import (
     _WsStreamWriter,
     _normalize_key,
     parse_vnc_url,
+    unlock_with_client,
     vnc_click,
     vnc_key,
     vnc_screenshot,
@@ -472,6 +473,59 @@ class TestVncClick:
                 await vnc_click("host", port=5900, password="pw", x=1920, y=1080)
 
         client.mouse.move.assert_called_once_with(1920, 1080)
+
+
+# ---------------------------------------------------------------------------
+# unlock_with_client
+# ---------------------------------------------------------------------------
+
+
+class TestUnlockWithClient:
+    """Tests for unlock_with_client()."""
+
+    async def test_unlock_default_types_password_and_enter(self, mock_vnc_client):
+        """Default unlock only types password and presses Enter — no mouse click, no username."""
+        _cm, client = mock_vnc_client
+
+        with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            await unlock_with_client(client, "secret123")
+
+        client.keyboard.write.assert_called_once_with("secret123")
+        client.keyboard.press.assert_called_once_with("Return")
+        client.mouse.click.assert_not_called()
+
+    async def test_unlock_with_click_screen(self, mock_vnc_client):
+        """click_screen=True clicks the centre of the screen before typing."""
+        _cm, client = mock_vnc_client
+        # Set up video dimensions (200x100 to match the mock screenshot array)
+        client.video = MagicMock()
+        client.video.width = 200
+        client.video.height = 100
+
+        with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            await unlock_with_client(client, "secret123", click_screen=True)
+
+        # Mouse should have been clicked (centre of 200x100 screen)
+        client.mouse.move.assert_called_once_with(100, 50)
+        client.mouse.click.assert_called_once()
+        client.keyboard.write.assert_called_once_with("secret123")
+        client.keyboard.press.assert_called_once_with("Return")
+
+    async def test_unlock_with_username(self, mock_vnc_client):
+        """When username is provided, types username + Tab before password."""
+        _cm, client = mock_vnc_client
+
+        with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            await unlock_with_client(client, "secret123", username="admin")
+
+        assert client.keyboard.write.call_count == 2
+        calls = client.keyboard.write.call_args_list
+        assert calls[0][0] == ("admin",)
+        assert calls[1][0] == ("secret123",)
+        assert client.keyboard.press.call_count == 2
+        press_calls = client.keyboard.press.call_args_list
+        assert press_calls[0][0] == ("Tab",)
+        assert press_calls[1][0] == ("Return",)
 
 
 # ---------------------------------------------------------------------------
