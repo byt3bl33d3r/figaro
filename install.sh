@@ -285,6 +285,10 @@ setup_env() {
     info "Creating .env from .env.example..."
     cp .env.example .env
 
+    if ! grep -q "^FIGARO_ENCRYPTION_KEY=" .env; then
+        echo "FIGARO_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
+    fi
+
     if is_interactive; then
         if prompt_continue "Open .env in your editor?"; then
             "${EDITOR:-${VISUAL:-nano}}" .env

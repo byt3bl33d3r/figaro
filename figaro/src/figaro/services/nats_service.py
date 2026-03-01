@@ -26,6 +26,7 @@ from figaro.db.repositories.desktop_workers import DesktopWorkerRepository
 from figaro.db.repositories.workers import WorkerSessionRepository
 from figaro.db.repositories.tasks import TaskRepository
 from figaro.db.repositories.scheduled import ScheduledTaskRepository
+from figaro.db.repositories.settings import SettingsRepository
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -84,6 +85,7 @@ class NatsService:
         await ensure_streams(self._conn.js)
         await self._setup_subscriptions()
         await self._register_desktop_workers()
+        await self._load_settings_vnc_password()
         self._heartbeat_task = asyncio.create_task(self._heartbeat_monitor())
         self._vnc_pool.start()
         logger.info("NatsService started")
@@ -166,6 +168,20 @@ class NatsService:
             )
             self._desktop_worker_ids.add(worker_id)
             logger.info(f"Registered desktop-only worker from config: {worker_id}")
+
+    async def _load_settings_vnc_password(self) -> None:
+        """Load VNC password from settings table, overriding env var default."""
+        if not self._session_factory:
+            return
+        try:
+            async with self._session_factory() as session:
+                repo = SettingsRepository(session)
+                password = await repo.get_vnc_password()
+                if password is not None:
+                    self._settings.vnc_password = password
+                    logger.info("Loaded VNC password from settings table")
+        except Exception:
+            logger.warning("Failed to load VNC password from settings table", exc_info=True)
 
     # ── Subscription setup ──────────────────────────────────────
 
@@ -804,7 +820,7 @@ class NatsService:
                 "capabilities": w.capabilities,
                 "novnc_url": w.novnc_url,
                 "vnc_username": w.vnc_username,
-                "vnc_password": w.vnc_password,
+                "vnc_password": "***" if w.vnc_password else None,
                 "agent_connected": w.agent_connected,
                 "metadata": w.metadata,
             }
@@ -1070,7 +1086,7 @@ class NatsService:
                     "capabilities": w.capabilities,
                     "novnc_url": w.novnc_url,
                     "vnc_username": w.vnc_username,
-                    "vnc_password": w.vnc_password,
+                    "vnc_password": "***" if w.vnc_password else None,
                     "agent_connected": w.agent_connected,
                     "metadata": w.metadata,
                 }
@@ -1515,6 +1531,8 @@ class NatsService:
         metadata = data.get("metadata", {})
         vnc_username = data.get("vnc_username")
         vnc_password = data.get("vnc_password")
+        if vnc_password == "***":
+            vnc_password = None  # Sentinel means "no change"
 
         if not worker_id:
             return {"error": "worker_id is required"}
@@ -1591,6 +1609,8 @@ class NatsService:
         metadata = data.get("metadata") or None
         vnc_username = data.get("vnc_username") or None
         vnc_password = data.get("vnc_password") or None
+        if vnc_password == "***":
+            vnc_password = None  # Sentinel means "no change"
 
         if not worker_id:
             return {"error": "worker_id is required"}

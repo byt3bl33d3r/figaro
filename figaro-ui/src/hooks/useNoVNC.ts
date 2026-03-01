@@ -14,17 +14,11 @@ interface RFBInstance {
 }
 
 interface RFBConstructor {
-  new (
-    target: HTMLElement,
-    url: string,
-    options?: { credentials?: { username?: string; password?: string } }
-  ): RFBInstance;
+  new (target: HTMLElement, url: string): RFBInstance;
 }
 
 interface UseNoVNCOptions {
   url: string | undefined;
-  username?: string;
-  password?: string;
   viewOnly?: boolean;
   scaleViewport?: boolean;
   clipViewport?: boolean;
@@ -67,8 +61,6 @@ const RECONNECT_MAX_ATTEMPTS = 20;
 export function useNoVNC(options: UseNoVNCOptions): UseNoVNCReturn {
   const {
     url,
-    username,
-    password = import.meta.env.VITE_VNC_DEFAULT_PASSWORD || '',
     viewOnly = true,
     scaleViewport = true,
     clipViewport = false,
@@ -165,12 +157,7 @@ export function useNoVNC(options: UseNoVNCOptions): UseNoVNCReturn {
           containerRef.current.removeChild(containerRef.current.firstChild);
         }
 
-        const creds: { username?: string; password?: string } = {};
-        if (username) creds.username = username;
-        if (password) creds.password = password;
-        const rfb = new RFB(containerRef.current, url!, {
-          credentials: Object.keys(creds).length > 0 ? creds : undefined,
-        });
+        const rfb = new RFB(containerRef.current, url!);
 
         rfb.viewOnly = viewOnly;
         rfb.scaleViewport = scaleViewport;
@@ -225,7 +212,7 @@ export function useNoVNC(options: UseNoVNCOptions): UseNoVNCReturn {
       clearReconnectTimer();
       disconnect();
     };
-  }, [url, username, password, viewOnly, scaleViewport, clipViewport, disconnect, clearReconnectTimer, onConnect, onDisconnect, onSecurityFailure]);
+  }, [url, viewOnly, scaleViewport, clipViewport, disconnect, clearReconnectTimer, onConnect, onDisconnect, onSecurityFailure]);
 
   // Update viewOnly when it changes
   useEffect(() => {

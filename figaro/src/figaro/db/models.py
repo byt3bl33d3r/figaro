@@ -19,6 +19,8 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
+from figaro.db.types import EncryptedString
+
 
 class Base(DeclarativeBase):
     """Base class for all models."""
@@ -158,7 +160,9 @@ class ScheduledTaskModel(Base):
     self_learning: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     self_healing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     self_learning_max_runs: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    self_learning_run_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    self_learning_run_count: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
     run_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -225,7 +229,9 @@ class HelpRequestModel(Base):
     )
 
     # Relationship
-    task: Mapped["TaskModel"] = relationship("TaskModel", back_populates="help_requests")
+    task: Mapped["TaskModel"] = relationship(
+        "TaskModel", back_populates="help_requests"
+    )
 
 
 class WorkerSessionModel(Base):
@@ -259,7 +265,7 @@ class DesktopWorkerModel(Base):
     worker_id: Mapped[str] = mapped_column(String(255), primary_key=True)
     novnc_url: Mapped[str] = mapped_column(Text, nullable=False, default="")
     vnc_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    vnc_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    vnc_password: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, nullable=False, default=dict
     )
@@ -275,3 +281,13 @@ class DesktopWorkerModel(Base):
         server_default=func.now(),
         onupdate=lambda: datetime.now(timezone.utc),
     )
+
+
+class FigaroSettingsModel(Base):
+    """Single-row system settings table (id is always 1)."""
+
+    __tablename__ = "figaro_settings"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, default=1)
+    vnc_username: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    vnc_password: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)

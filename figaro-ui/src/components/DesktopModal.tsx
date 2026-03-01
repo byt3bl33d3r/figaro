@@ -96,8 +96,6 @@ export function DesktopModal({ workerId, onClose }: DesktopModalProps) {
           <div className="flex-1 bg-black">
             <VNCViewer
               url={getVncProxyUrl(worker.id)}
-              username={worker.vnc_username}
-              password={worker.vnc_password}
               viewOnly={false}
               className="w-full h-full"
             />

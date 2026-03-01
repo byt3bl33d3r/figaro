@@ -25,8 +25,6 @@ export function WorkerCard({ worker, onClick, onContextMenu }: WorkerCardProps) 
       <div className="relative aspect-video bg-black">
         <VNCViewer
           url={getVncProxyUrl(worker.id)}
-          username={worker.vnc_username}
-          password={worker.vnc_password}
           viewOnly={true}
           className="w-full h-full"
         />

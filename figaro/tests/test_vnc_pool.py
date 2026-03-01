@@ -54,7 +54,7 @@ class TestAcquireCreatesConnection:
             async with pool.connection("host", 5901, password="pw") as c:
                 assert c is client
 
-            mock_open.assert_awaited_once_with("host", 5901)
+            mock_open.assert_awaited_once_with("host", 5901, ssl=None)
 
         await pool.close()
 
@@ -98,7 +98,7 @@ class TestStaleConnectionReconnects:
 
         call_count = 0
 
-        async def fake_open(host, port):
+        async def fake_open(host, port, **kwargs):
             nonlocal call_count
             call_count += 1
             if call_count == 1:
@@ -211,7 +211,7 @@ class TestConcurrentDifferentHosts:
         client_a = _make_client()
         client_b = _make_client()
 
-        async def fake_open(host, port):
+        async def fake_open(host, port, **kwargs):
             if host == "host-a":
                 return (MagicMock(), writer_a)
             return (MagicMock(), writer_b)

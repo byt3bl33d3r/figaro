@@ -20,8 +20,12 @@ class Settings(BaseSettings):
     db_command_timeout: int = 30  # 30 seconds
 
     # VNC settings
-    vnc_username: str | None = None  # VNC username (for macOS Apple Remote Desktop auth)
-    vnc_password: str | None = None  # VNC password (None = no auth, matches -SecurityTypes None)
+    vnc_username: str | None = (
+        None  # VNC username (for macOS Apple Remote Desktop auth)
+    )
+    vnc_password: str | None = (
+        None  # VNC password (None = no auth, matches -SecurityTypes None)
+    )
     vnc_port: int = 5901  # VNC display port (matches install.sh VNC_PORT)
     vnc_screenshot_max_width: int = 1280  # Max screenshot width sent to Claude
     vnc_screenshot_max_height: int = 800  # Max screenshot height sent to Claude
@@ -34,12 +38,19 @@ class Settings(BaseSettings):
 
     # Supervisor settings
     supervisor_enabled: bool = True  # Whether to accept supervisor connections
-    supervisor_default_target: str = "auto"  # Default task target: "worker", "supervisor", or "auto"
-    supervisor_learn_from_questions: bool = True  # Auto-update scheduled task prompts based on learnings
+    supervisor_default_target: str = (
+        "auto"  # Default task target: "worker", "supervisor", or "auto"
+    )
+    supervisor_learn_from_questions: bool = (
+        True  # Auto-update scheduled task prompts based on learnings
+    )
 
     # Desktop workers — JSON string of pre-configured desktop worker entries
     # e.g. [{"id": "...", "novnc_url": "...", "metadata": {"os": "macos"}}]
     desktop_workers: str = "[]"
+
+    # Encryption settings
+    encryption_key: str = ""
 
     # Self-healing settings
     self_healing_enabled: bool = True  # System-wide default for self-healing

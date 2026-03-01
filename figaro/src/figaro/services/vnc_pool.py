@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import ssl
 import time
 from contextlib import asynccontextmanager
 from collections.abc import AsyncIterator
@@ -12,6 +13,14 @@ import websockets
 from figaro.services.vnc_client import WsVncAdapter
 
 logger = logging.getLogger(__name__)
+
+
+def _create_ssl_context() -> ssl.SSLContext:
+    """Create a permissive SSL context for TLS-wrapped VNC connections."""
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE
+    return ctx
 
 
 class _PoolEntry:
@@ -71,6 +80,7 @@ class VncConnectionPool:
         self._connect_timeout = connect_timeout
         self._entries: dict[str, _PoolEntry] = {}
         self._locks: dict[str, asyncio.Lock] = {}
+        self._tls_keys: set[str] = set()
         self._sweep_task: asyncio.Task[None] | None = None
 
     # ── lifecycle ───────────────────────────────────────────────
@@ -94,6 +104,7 @@ class VncConnectionPool:
             await entry.close()
         self._entries.clear()
         self._locks.clear()
+        self._tls_keys.clear()
 
     # ── public API ──────────────────────────────────────────────
 
@@ -181,11 +192,20 @@ class VncConnectionPool:
             await entry.close()
             del self._entries[key]
 
+        use_tls = key in self._tls_keys
+
         # Create a fresh connection (with timeout to avoid blocking on unreachable hosts)
-        logger.info("VNC pool: connecting TCP to %s:%d (timeout=%.0fs)", host, port, self._connect_timeout)
+        logger.info(
+            "VNC pool: connecting %s to %s:%d (timeout=%.0fs)",
+            "TLS" if use_tls else "TCP", host, port, self._connect_timeout,
+        )
         try:
             reader, writer = await asyncio.wait_for(
-                asyncio.open_connection(host, port), timeout=self._connect_timeout
+                asyncio.open_connection(
+                    host, port,
+                    ssl=_create_ssl_context() if use_tls else None,
+                ),
+                timeout=self._connect_timeout,
             )
         except asyncio.TimeoutError:
             logger.error("VNC pool: TCP connect to %s:%d timed out after %.0fs", host, port, self._connect_timeout)
@@ -198,6 +218,31 @@ class VncConnectionPool:
                 asyncvnc.Client.create(reader, writer, username, password),
                 timeout=self._connect_timeout,
             )
+        except (ValueError, asyncio.IncompleteReadError) as exc:
+            writer.close()
+            if use_tls:
+                logger.error("VNC pool: RFB handshake with %s:%d failed (TLS): %s", host, port, exc)
+                raise
+            # Plain TCP rejected — retry with TLS (macOS Screen Sharing)
+            logger.info(
+                "VNC pool: plain TCP handshake with %s:%d failed (%s), retrying with TLS",
+                host, port, exc,
+            )
+            try:
+                reader, writer = await asyncio.wait_for(
+                    asyncio.open_connection(host, port, ssl=_create_ssl_context()),
+                    timeout=self._connect_timeout,
+                )
+                client = await asyncio.wait_for(
+                    asyncvnc.Client.create(reader, writer, username, password),
+                    timeout=self._connect_timeout,
+                )
+                self._tls_keys.add(key)
+                logger.info("VNC pool: TLS connection to %s:%d established", host, port)
+            except Exception as tls_exc:
+                logger.error("VNC pool: TLS handshake with %s:%d also failed: %s", host, port, tls_exc)
+                writer.close()
+                raise
         except asyncio.TimeoutError:
             logger.error("VNC pool: RFB handshake with %s:%d timed out after %.0fs", host, port, self._connect_timeout)
             writer.close()

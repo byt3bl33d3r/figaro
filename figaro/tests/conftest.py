@@ -8,6 +8,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
 from sqlalchemy import String
 
+from figaro.db.types import EncryptedString
+
 from figaro.services import Registry, TaskManager
 
 
@@ -32,6 +34,8 @@ def _create_sqlite_compatible_metadata():
                 col_type = JSON()
             elif isinstance(col_type, PG_UUID):
                 col_type = String(36)
+            elif isinstance(col_type, EncryptedString):
+                col_type = String(255)
             elif isinstance(col_type, BigInteger) and col.primary_key:
                 # SQLite needs INTEGER for autoincrement PKs
                 col_type = Integer()
@@ -77,6 +81,19 @@ async def db_engine():
         cursor = dbapi_connection.cursor()
         cursor.execute("PRAGMA foreign_keys=ON")
         cursor.close()
+
+    @event.listens_for(engine.sync_engine, "connect")
+    def register_pgcrypto_stubs(dbapi_connection, connection_record):
+        dbapi_connection.create_function(
+            "pgp_sym_encrypt",
+            2,
+            lambda data, key: data.encode() if data else None,
+        )
+        dbapi_connection.create_function(
+            "pgp_sym_decrypt",
+            2,
+            lambda data, key: data.decode() if isinstance(data, bytes) else data,
+        )
 
     # Create tables using SQLite-compatible metadata
     sqlite_metadata = _create_sqlite_compatible_metadata()

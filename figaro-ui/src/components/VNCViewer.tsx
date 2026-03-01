@@ -2,8 +2,6 @@ import { useNoVNC } from '../hooks/useNoVNC';
 
 interface VNCViewerProps {
   url: string | undefined;
-  username?: string;
-  password?: string;
   viewOnly?: boolean;
   className?: string;
   onConnect?: () => void;
@@ -12,8 +10,6 @@ interface VNCViewerProps {
 
 export function VNCViewer({
   url,
-  username,
-  password,
   viewOnly = true,
   className = '',
   onConnect,
@@ -21,8 +17,6 @@ export function VNCViewer({
 }: VNCViewerProps) {
   const { containerRef, connected, connecting, error } = useNoVNC({
     url,
-    username,
-    password,
     viewOnly,
     scaleViewport: true,
     onConnect,

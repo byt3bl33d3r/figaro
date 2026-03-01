@@ -2,7 +2,7 @@
 
 from fastapi import APIRouter, WebSocket
 
-from figaro.dependencies import RegistryWsDep
+from figaro.dependencies import RegistryWsDep, SettingsWsDep
 from figaro.vnc_proxy import proxy_vnc
 
 router = APIRouter(tags=["websocket"])
@@ -13,7 +13,8 @@ async def vnc_proxy_endpoint(
     websocket: WebSocket,
     worker_id: str,
     registry: RegistryWsDep,
+    settings: SettingsWsDep,
 ) -> None:
     """Proxy VNC WebSocket connection to a worker."""
     await websocket.accept()
-    await proxy_vnc(websocket, worker_id, registry)
+    await proxy_vnc(websocket, worker_id, registry, settings)

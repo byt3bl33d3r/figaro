@@ -64,16 +64,7 @@ VNC passwords are included in worker broadcast messages (`figaro.broadcast.worke
 "vnc_password": w.vnc_password,
 ```
 
-### 6. Supervisor agent receives VNC credentials explicitly
-
-**Files:** `figaro-supervisor/src/figaro_supervisor/supervisor/tools.py:233`, `processor.py:70,113`
-
-The `list_workers` tool returns `vnc_username` and `vnc_password` to the AI supervisor agent. The system prompt instructs the supervisor to use these credentials to unlock lock screens. This means VNC passwords flow through:
-
-1. Worker registration -> NATS (plaintext) -> Orchestrator -> NATS (plaintext) -> Supervisor
-2. Into the Claude API as tool results (sent to Anthropic's servers as part of the conversation)
-
-### 7. Containerized workers have VNC servers that listen on all interfaces without authentication
+### 6. Containerized workers have VNC servers that listen on all interfaces without authentication
 
 **File:** `container-desktop-install.sh:389,394`
 
@@ -85,17 +76,7 @@ common_options="tigervncserver ... -localhost 0 ..."
 
 The `-localhost 0` flag binds VNC to all interfaces inside the container. Without a VNC password, the server explicitly disables all security. However, worker containers do not publish any ports to the host — VNC is only reachable from other containers on the `figaro-net` Docker bridge network (i.e., the orchestrator, supervisor, and other internal services). Direct access from outside the Docker network is not possible unless ports are explicitly mapped in a compose overlay.
 
-### 8. VNC passwords stored unencrypted in database
-
-**File:** `figaro/src/figaro/db/models.py:259`
-
-```python
-vnc_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
-```
-
-VNC passwords are stored as plaintext in the PostgreSQL `desktop_workers` table. No encryption at rest. PostgreSQL does not publish any ports to the host in any compose file — it is only reachable from other containers on the `figaro-net` Docker network.
-
-### 9. No authentication on HTTP/WebSocket endpoints
+### 7. No authentication on HTTP/WebSocket endpoints
 
 **Files:** `figaro/src/figaro/app.py`, `routes/websocket.py`, `routes/config.py`
 
@@ -108,7 +89,7 @@ The FastAPI application has:
 
 In the base compose, the orchestrator does not publish any ports and is only reachable on the `figaro-net` Docker network. The dev overlay exposes it on 127.0.0.1:8000 and the prod overlay on 0.0.0.0:8000.
 
-### 10. Hardcoded database credentials
+### 8. Hardcoded database credentials
 
 **Files:** `docker-compose.yml:5-7`, `figaro/src/figaro/config.py:15`
 
@@ -121,41 +102,41 @@ Database credentials are hardcoded as `figaro/figaro` in both compose files and 
 
 ---
 
-### 11. No CORS configuration
+### 9. No CORS configuration
 
 **File:** `figaro/src/figaro/app.py`
 
 The FastAPI app has no CORS middleware. Any website can make requests to the orchestrator API and establish WebSocket connections to the VNC proxy, enabling cross-origin attacks from a user's browser.
 
-### 12. Docker containers use `ipc: host`
+### 10. Docker containers use `ipc: host`
 
 **Files:** `docker-compose.yml:72`, `docker-compose.dev.yml:22`
 
 Workers run with `ipc: host`, sharing the host's IPC namespace. Required for Chromium's shared memory but widens the container escape surface.
 
-### 13. VNC proxy enables SSRF
+### 11. VNC proxy enables SSRF
 
 **Files:** `figaro/src/figaro/vnc_proxy.py`, `services/nats_service.py:1299-1374`
 
 The VNC proxy connects to whatever `novnc_url` is registered by a worker. Since NATS registration is unauthenticated, an attacker with access to NATS can register a fake worker pointing `novnc_url` at internal services on the `figaro-net` Docker network, using the orchestrator as an SSRF proxy into the private network.
 
-### 14. All VNC traffic unencrypted
+### 12. All VNC traffic unencrypted
 
 **Files:** `figaro/src/figaro/services/vnc_client.py`, `vnc_proxy.py`
 
 All asyncvnc connections use plain TCP or `ws://` (not `wss://`). VNC traffic — including screenshots of potentially sensitive content and keyboard input (passwords typed by the supervisor) — travels unencrypted over the `figaro-net` Docker network. Worker VNC ports are not published to the host; the orchestrator connects to them internally and proxies to external clients.
 
-### 15. Default VNC password is well-known
+### 13. Default VNC password is well-known
 
-**Files:** `container-desktop-install.sh:11`, `figaro-ui/.env.example:8`
+**File:** `container-desktop-install.sh:11`
 
 ```bash
 VNC_PASSWORD=${PASSWORD:-"vscode"}
 ```
 
-The default VNC password `vscode` is the standard VS Code devcontainer password. The UI also bakes this default into the frontend bundle via `VITE_VNC_DEFAULT_PASSWORD`.
+The default VNC password `vscode` is the standard VS Code devcontainer password.
 
-### 16. Wildcard injection in task search
+### 14. Wildcard injection in task search
 
 **File:** `figaro/src/figaro/db/repositories/tasks.py:336`
 
@@ -165,13 +146,13 @@ The default VNC password `vscode` is the standard VS Code devcontainer password.
 
 While SQLAlchemy parameterizes the value (no SQL injection), user input containing `%` or `_` can perform wildcard-based data discovery across task prompts.
 
-### 17. No Content Security Policy headers
+### 15. No Content Security Policy headers
 
 No CSP headers are configured anywhere. The UI SPA has no browser-level protection against XSS via content injection.
 
 ---
 
-### 18. Remote scripts piped to bash during build
+### 16. Remote scripts piped to bash during build
 
 **Files:** `Dockerfile.worker-desktop:39`, `figaro-supervisor/Dockerfile:31`, `.devcontainer/devcontainer.json:45`
 
@@ -181,29 +162,19 @@ RUN curl -fsSL https://claude.ai/install.sh | bash
 
 The Claude CLI (and bun, uv) are installed by piping remote scripts directly to bash. A compromise of these URLs would inject malicious code into all builds.
 
-### 19. Custom seccomp profile allows ptrace
+### 17. Custom seccomp profile allows ptrace
 
 **File:** `seccomp_profile.json:409-419`
 
 All containerized workers run under a custom seccomp profile (`seccomp_profile.json`) that restricts syscalls to only those required by Chromium. The profile allows the `ptrace` syscall, required for Chromium debugging, which expands the container attack surface.
 
-### 20. VNC password baked into UI frontend bundle
-
-**File:** `figaro-ui/src/hooks/useNoVNC.ts:71`
-
-```typescript
-password = import.meta.env.VITE_VNC_DEFAULT_PASSWORD || '',
-```
-
-The VNC password is readable in the served JavaScript bundle by anyone who loads the UI.
-
-### 21. Orchestrator binds to 0.0.0.0
+### 18. Orchestrator binds to 0.0.0.0
 
 **Files:** `figaro/src/figaro/config.py:5`, `docker-compose.prod.yml:8`
 
 The orchestrator HTTP server defaults to binding on `0.0.0.0` inside its container, but the base `docker-compose.yml` does not publish any orchestrator ports — it is only reachable on the internal `figaro-net` Docker network. The dev overlay exposes it on `127.0.0.1`, while the prod overlay exposes it on `0.0.0.0` on the host, making the config endpoint and VNC proxy accessible on all host interfaces.
 
-### 22. JavaScript eval capability in browser automation
+### 19. JavaScript eval capability in browser automation
 
 **File:** `patchright-cli/src/patchright_cli/server.py:851`
 

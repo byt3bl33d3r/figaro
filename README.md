@@ -80,12 +80,18 @@ By default the install script uses the `prod-local` overlay, Figaro will be avai
 
 ```bash
 cp .env.example .env
+
+# Generate an encryption key for VNC password storage (required)
+echo "FIGARO_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
+
 # Optional: set an OPENAPI_API_KEY
 # OPENAI_API_KEY=sk-proj-example
 # Optional: set Telegram gateway variables for notifications and task submission
 # GATEWAY_TELEGRAM_BOT_TOKEN=your-bot-token
 # GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS=["your-chat-id"]
 ```
+
+VNC passwords are encrypted at rest in PostgreSQL using pgcrypto. The `FIGARO_ENCRYPTION_KEY` is used for symmetric encryption and must be set before starting the orchestrator. The `install.sh` script generates this automatically.
 
 The base `docker/docker-compose.yml` defines all shared services but does **not** expose ports. Choose an overlay for your deployment scenario:
 
