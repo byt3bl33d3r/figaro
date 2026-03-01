@@ -4,18 +4,6 @@ A CLI tool for browser automation built on [Patchright](https://github.com/Kalii
 
 Every command should map 1:1 to its `playwright-cli` counterpart — same arguments, same output format, same environment variables (prefixed `PLAYWRIGHT_MCP_*`). Switch by replacing `playwright-cli` with `patchright-cli` in your scripts.
 
-## Why patchright-cli?
-
-| | playwright-cli | patchright-cli |
-|---|---|---|
-| `navigator.webdriver` | Exposed | Hidden |
-| `--enable-automation` flag | Present | Removed |
-| Automation detection | Detectable | Stealth by default |
-| WebGL fingerprint spoofing | No | Yes (opt-in) |
-| System Chromium (h264 codec) | Manual | Auto-detected |
-| Persistent sessions | Limited | Full daemon-per-session |
-| Browser engine | Playwright | Patchright (Playwright fork) |
-
 ## Installation
 
 Requires Python >= 3.14.
