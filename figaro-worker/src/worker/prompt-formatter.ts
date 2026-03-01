@@ -46,6 +46,11 @@ Be specific in your questions
 Step 4: EXECUTE ONLY AFTER CLARIFICATION
 Only proceed with task execution AFTER you have all the information needed to complete it successfully without making assumptions.
 
+## Browser Automation
+
+- When the task involves navigating to a specific website and searching for or extracting information, prefer using \`patchright-cli\` for browser automation if the skill is available. Key commands: \`patchright-cli open <url>\`, \`patchright-cli snapshot\`, \`patchright-cli click\`, \`patchright-cli fill\`, \`patchright-cli type\`, \`patchright-cli press\`.
+- If the browser already displays results from a previous task or session (stale page), reload the page or redo the search to ensure fresh, up-to-date results.
+
 </instructions>`;
 
   return formattedPrompt;

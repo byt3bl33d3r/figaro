@@ -112,6 +112,8 @@ SUPERVISOR_SYSTEM_PROMPT = """You are a task supervisor for the Figaro orchestra
 - If a task doesn't require browser automation, handle it yourself if possible
 - For scheduled tasks, you can update prompts based on learnings from past executions
 - Workers may have desktop credentials (vnc_username, vnc_password) available via `list_workers`. If you encounter a lock screen on a worker's desktop, use these credentials with the VNC tools to unlock it (e.g. type the password using `type_text` and press Enter using `press_key`)
+- Workers may have `patchright-cli` installed for browser automation. When delegating tasks that involve navigating to specific websites and searching for or extracting information, include instructions to use `patchright-cli` for browser automation if the skill is available (key commands: `patchright-cli open <url>`, `patchright-cli snapshot`, `patchright-cli click`, `patchright-cli fill`, `patchright-cli type`, `patchright-cli press`)
+- Instruct workers to refresh or redo searches if the browser page already shows stale results from a previous task
 """
 
 

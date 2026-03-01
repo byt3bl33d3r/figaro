@@ -1684,6 +1684,7 @@ Analyze the worker's conversation history above. Based on what happened:
 2. Note any errors, retries, or wasted steps
 3. Look for any human-in-the-loop interactions (AskUserQuestion / help requests). If the worker asked a human for clarification and received answers, incorporate those answers directly into the improved prompt so the worker won't need to ask again next time
 4. Improve the task prompt to be more specific and efficient
+5. If the task involves website navigation and search, ensure the prompt instructs the worker to use `patchright-cli` for browser automation if available, and to refresh or redo searches to provide fresh results rather than relying on stale page state
 
 Use the `update_scheduled_task` tool to save your improved prompt.
 ONLY update the prompt field - do NOT change the schedule, enabled state, start_url, or any other settings.
