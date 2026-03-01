@@ -104,8 +104,6 @@ services:
       - ../.env
     environment:
       - GATEWAY_NATS_URL=nats://nats:4222
-      - GATEWAY_TELEGRAM_BOT_TOKEN=${GATEWAY_TELEGRAM_BOT_TOKEN:-}
-      - GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS=${GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS:-[]}
     networks:
       - figaro-net
 
