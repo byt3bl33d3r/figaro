@@ -1,0 +1,64 @@
+[project]
+name = "patchright-cli"
+version = "0.1.0"
+description = "CLI tool for browser automation via patchright"
+readme = "README.md"
+authors = [
+    { name = "byt3bl33d3r", email = "byt3bl33d3r@pm.me" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "patchright>=1.56.0",
+    "pydantic>=2.0",
+    "pydantic-settings>=2.0",
+    "openai>=1.0",
+]
+
+[project.scripts]
+patchright-cli = "patchright_cli:main"
+
+[build-system]
+requires = ["uv_build>=0.9.18,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=0.26.0",
+    "pytest-cov>=6.0.0",
+    "ruff>=0.15.4",
+    "ty>=0.0.19",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+addopts = [
+    "--cov=patchright_cli",
+    "--cov-report=term-missing",
+    "--cov-report=html:htmlcov",
+    "--cov-config=pyproject.toml",
+    "-x",
+    "-m", "not integration",
+]
+markers = [
+    "integration: integration tests requiring a real browser (deselect with '-m not integration')",
+]
+
+[tool.coverage.run]
+source = ["patchright_cli"]
+branch = true
+omit = ["src/patchright_cli/__main__.py"]
+
+[tool.coverage.report]
+show_missing = true
+skip_empty = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.",
+    "if TYPE_CHECKING:",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"

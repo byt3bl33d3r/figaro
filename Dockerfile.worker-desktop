@@ -1,0 +1,60 @@
+# Stage 1: Build native binary
+FROM oven/bun:1 AS builder
+WORKDIR /build
+COPY figaro-worker/package.json figaro-worker/bun.lock* ./
+RUN bun install --frozen-lockfile
+COPY figaro-worker/ .
+RUN bun run build
+
+# Stage 2: Build patchright-cli wheel and dependencies
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim AS python-builder
+WORKDIR /app
+COPY patchright-cli/ /app/patchright-cli/
+RUN uv build /app/patchright-cli --out-dir /wheels
+RUN cd /app/patchright-cli && \
+    uv export --frozen --no-emit-project --no-hashes > /tmp/patchright-requirements.txt && \
+    pip wheel -r /tmp/patchright-requirements.txt -w /wheels
+
+# Stage 3: Runtime (same desktop environment as Python worker)
+FROM mcr.microsoft.com/devcontainers/python:2-3.14-bookworm
+
+# Remove problematic yarn repo (same as Python worker)
+RUN rm -f /etc/apt/sources.list.d/yarn.list && rm -f /usr/share/keyrings/yarn.gpg
+
+# Install desktop environment (VNC, noVNC, fluxbox)
+COPY container-desktop-install.sh /tmp/install.sh
+RUN chmod +x /tmp/install.sh && /tmp/install.sh && rm /tmp/install.sh
+
+# Install system deps: xdotool, scrot, chromium, fonts, audio
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    curl xdotool scrot chromium \
+    fonts-liberation fonts-dejavu fonts-crosextra-carlito fonts-crosextra-caladea \
+    pulseaudio espeak-ng speech-dispatcher speech-dispatcher-espeak-ng \
+    && rm -rf /var/lib/apt/lists/*
+
+USER vscode
+WORKDIR /worker
+
+# Install Claude Code CLI
+RUN curl -fsSL https://claude.ai/install.sh | bash
+
+# Copy native binary (no Python runtime needed!)
+COPY --from=builder /build/dist/figaro-worker /usr/local/bin/figaro-worker
+
+# Copy skills
+COPY --chown=vscode:vscode figaro-worker/skills/ /home/vscode/.claude/skills/
+
+# Install patchright-cli from pre-built wheels
+USER root
+RUN --mount=type=bind,from=python-builder,source=/wheels,target=/wheels \
+    pip3 install --no-index --find-links=/wheels /wheels/patchright_cli-*.whl
+
+# Install patchright-cli skills
+USER vscode
+RUN patchright-cli install --skills
+
+ENV DISPLAY=:1
+ENV WORKER_NOVNC_URL=""
+ENV WORKER_CLAUDE_CODE_PATH=/home/vscode/.local/bin/claude
+ENV TZ=America/New_York
+CMD ["/bin/bash", "-c", "/usr/local/share/desktop-init.sh && sleep 2 && figaro-worker"]

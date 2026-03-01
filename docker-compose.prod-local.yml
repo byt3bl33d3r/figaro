@@ -1,0 +1,8 @@
+services:
+  nats:
+    ports:
+      - "127.0.0.1:8443:8443"
+
+  orchestrator:
+    ports:
+      - "127.0.0.1:${ORCHESTRATOR_PORT:-8000}:8000"

@@ -1,0 +1,37 @@
+[project]
+name = "figaro-supervisor"
+version = "0.1.0"
+description = "Supervisor agent for Figaro orchestration system"
+readme = "README.md"
+authors = [
+    { name = "byt3bl33d3r", email = "byt3bl33d3r@pm.me" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "claude-agent-sdk>=0.1.44",
+    "figaro-nats",
+    "httpx>=0.28.0",
+    "pydantic-settings>=2.7.0",
+]
+
+[tool.uv.sources]
+figaro-nats = { path = "../figaro-nats", editable = true }
+
+[project.scripts]
+figaro-supervisor = "figaro_supervisor:main"
+
+[build-system]
+requires = ["uv_build>=0.9.26,<0.10.0"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=0.25.0",
+    "ruff>=0.14.13",
+    "ty>=0.0.12",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

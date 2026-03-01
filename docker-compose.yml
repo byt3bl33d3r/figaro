@@ -1,0 +1,118 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: figaro
+      POSTGRES_PASSWORD: figaro
+      POSTGRES_DB: figaro
+    volumes:
+      - figaro_pgdata:/var/lib/postgresql/data
+    networks:
+      - figaro-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U figaro"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  nats:
+    image: nats:2.12.4-alpine3.22
+    command: -c /etc/nats/nats.conf
+    volumes:
+      - nats_data:/data
+      - ./nats.conf:/etc/nats/nats.conf:ro
+    networks:
+      - figaro-net
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8222/healthz || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  orchestrator:
+    build:
+      context: .
+      dockerfile: figaro/Dockerfile
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    environment:
+      - FIGARO_HOST=0.0.0.0
+      - FIGARO_PORT=8000
+      - FIGARO_DATABASE_URL=postgresql+asyncpg://figaro:figaro@postgres/figaro
+      - FIGARO_NATS_URL=nats://nats:4222
+      - FIGARO_NATS_WS_URL=ws://localhost:8443
+    networks:
+      - figaro-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/workers"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker-desktop
+    depends_on:
+      nats:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - WORKER_NATS_URL=nats://nats:4222
+    volumes:
+      - ~/.claude.json:/home/vscode/.claude.json
+      - ~/.claude/.credentials.json:/home/vscode/.claude/.credentials.json
+    networks:
+      - figaro-net
+    ipc: host
+    shm_size: '1gb'
+    security_opt:
+      - seccomp:seccomp_profile.json
+    deploy:
+      replicas: 2
+
+  supervisor:
+    build:
+      context: .
+      dockerfile: figaro-supervisor/Dockerfile
+    depends_on:
+      nats:
+        condition: service_healthy
+    environment:
+      - SUPERVISOR_NATS_URL=nats://nats:4222
+    volumes:
+      - ~/.claude.json:/home/vscode/.claude.json
+      - ~/.claude/.credentials.json:/home/supervisor/.claude/.credentials.json
+    networks:
+      - figaro-net
+    deploy:
+      replicas: 2
+
+  gateway:
+    build:
+      context: .
+      dockerfile: figaro-gateway/Dockerfile
+    depends_on:
+      nats:
+        condition: service_healthy
+    env_file:
+      - .env
+    environment:
+      - GATEWAY_NATS_URL=nats://nats:4222
+      - GATEWAY_TELEGRAM_BOT_TOKEN=${GATEWAY_TELEGRAM_BOT_TOKEN:-}
+      - GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS=${GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS:-[]}
+    networks:
+      - figaro-net
+
+networks:
+  figaro-net:
+    driver: bridge
+
+volumes:
+  figaro_pgdata:
+  nats_data:

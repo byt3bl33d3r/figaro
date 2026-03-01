@@ -1,0 +1,94 @@
+# Build figaro-worker wheel and download dependencies
+FROM ghcr.io/astral-sh/uv:python3.14-bookworm-slim AS python-builder
+
+# Install build dependencies for plyvel (native extension)
+#RUN apt-get update && apt-get install -y libleveldb-dev build-essential && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Copy shared library first (needed as build dependency)
+COPY figaro-nats/ /app/figaro-nats/
+
+# Copy worker source
+COPY figaro-worker/ /app/figaro-worker/
+
+# Copy patchright-cli source
+COPY patchright-cli/ /app/patchright-cli/
+
+WORKDIR /app/figaro-worker
+RUN uv build /app/figaro-nats --out-dir /wheels \
+    && uv build /app/patchright-cli --out-dir /wheels \
+    && uv build . --out-dir /wheels
+
+# Export all dependencies (including transitive) and build/download as wheels
+# Use pip wheel to build native extensions like plyvel
+RUN uv export --frozen --no-emit-project --no-hashes > /tmp/requirements.txt && \
+    pip wheel -r /tmp/requirements.txt -w /wheels
+
+# Export patchright-cli dependencies
+RUN cd /app/patchright-cli && \
+    uv export --frozen --no-emit-project --no-hashes > /tmp/patchright-requirements.txt && \
+    pip wheel -r /tmp/patchright-requirements.txt -w /wheels
+
+FROM mcr.microsoft.com/devcontainers/python:2-3.14-bookworm
+
+# This is needed until the MS images fix the yarn public key issue
+RUN rm -f /etc/apt/sources.list.d/yarn.list \
+    && rm -f /usr/share/keyrings/yarn.gpg
+
+COPY container-desktop-install.sh  /tmp/install.sh
+RUN chmod +x /tmp/install.sh && \ 
+    /tmp/install.sh && \
+    rm /tmp/install.sh
+
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    curl \
+    xdotool \
+    scrot \
+    chromium \
+    fonts-liberation \
+    fonts-dejavu \
+    fonts-crosextra-carlito \
+    fonts-crosextra-caladea \
+    pulseaudio \
+    espeak-ng \
+    speech-dispatcher \
+    speech-dispatcher-espeak-ng \
+    && rm -rf /var/lib/apt/lists/*
+
+# Download and extract uBlock Origin Lite (MV3) into Debian's extension dir
+# The Chromium wrapper script auto-loads extensions from /usr/share/chromium/extensions/
+# Commented out cause the available chromium version in debian Chromium 145 can't parse the uBlock Origin Lite ruleset features
+# RUN UBLOCK_ID="ddkjiahejlhfcafbddmgiahcphecmpfh" \
+#     && UBLOCK_CRX_URL="https://clients2.google.com/service/update2/crx?response=redirect&acceptformat=crx2,crx3&prodversion=145.0&x=id%3D${UBLOCK_ID}%26installsource%3Dondemand%26uc" \
+#     && mkdir -p /usr/share/chromium/extensions/ublock-origin \
+#     && curl -fsSL -o /tmp/ublock.crx "$UBLOCK_CRX_URL" \
+#     && python3 -c "import zipfile; d=open('/tmp/ublock.crx','rb').read(); open('/tmp/ublock.zip','wb').write(d[d.find(b'PK\x03\x04'):]); zipfile.ZipFile('/tmp/ublock.zip').extractall('/usr/share/chromium/extensions/ublock-origin')" \
+#     && rm /tmp/ublock.crx /tmp/ublock.zip
+
+# Install Claude Code as vscode user
+
+USER vscode
+WORKDIR /worker
+
+RUN curl -fsSL https://claude.ai/install.sh | bash
+
+# Switch back to root for wheel install (bind mount is root-owned)
+USER root
+RUN --mount=type=bind,from=python-builder,source=/wheels,target=/wheels \
+    pip3 install --no-index --find-links=/wheels /wheels/figaro_worker-*.whl /wheels/patchright_cli-*.whl
+
+# Install patchright-cli skills and browser as vscode user
+USER vscode
+RUN patchright-cli install --skills
+
+COPY --chown=vscode:vscode figaro-worker/skills/ /home/vscode/.claude/skills/
+
+# # Create profile directory structure for Chrome extension
+# RUN mkdir -p "/home/vscode/.config/chromium/Default/Local Extension Settings/fcoeoabgfenejglbffodgkkbkcdhcgfn"
+# # Copy pre-authenticated extension storage
+# COPY --chown=vscode:vscode [".devcontainer/claude-chrome-auth/", "/home/vscode/.config/chromium/Default/Local Extension Settings/fcoeoabgfenejglbffodgkkbkcdhcgfn/"]
+ENV DISPLAY=:1
+ENV WORKER_NOVNC_URL=""
+ENV TZ=America/New_York
+CMD ["/bin/bash", "-c", "/usr/local/share/desktop-init.sh && sleep 2 && figaro-worker"]

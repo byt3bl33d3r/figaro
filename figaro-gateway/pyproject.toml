@@ -1,0 +1,36 @@
+[project]
+name = "figaro-gateway"
+version = "0.1.0"
+description = "Channel-agnostic messaging gateway for Figaro"
+requires-python = ">=3.12"
+dependencies = [
+    "figaro-nats",
+    "python-telegram-bot>=21.10",
+    "pydantic-settings>=2.7.0",
+]
+
+[tool.uv.sources]
+figaro-nats = {path = "../figaro-nats", editable = true}
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/figaro_gateway"]
+
+[project.scripts]
+figaro-gateway = "figaro_gateway:main"
+
+[dependency-groups]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.24.0",
+    "ruff>=0.8.0",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 120
