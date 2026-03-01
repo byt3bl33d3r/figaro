@@ -105,6 +105,12 @@ class TestTelegramChannel:
         # Should not raise
         await channel._wrap_callback(123, "hello")
 
+    async def test_send_photo_delegates_to_bot(self, channel):
+        """Test send_photo delegates to bot with int chat_id."""
+        channel._bot.send_photo = AsyncMock()
+        await channel.send_photo("111", "aW1hZ2U=", "caption")
+        channel._bot.send_photo.assert_called_once_with(111, "aW1hZ2U=", "caption")
+
     async def test_start_wires_callback(self):
         """Test that start wires up message callback to bot."""
         ch = TelegramChannel(bot_token="test-token", allowed_chat_ids=[111])

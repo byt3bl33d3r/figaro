@@ -252,3 +252,231 @@ class TestNatsRouter:
 
         await router.stop()
         assert task.done()
+
+    async def test_conn_property(self, router, mock_conn):
+        """Test that conn property returns the NATS connection."""
+        assert router.conn is mock_conn
+
+
+class TestHandleHelpRequest:
+    """Tests for _handle_help_request — routing help requests to channels."""
+
+    async def test_routes_to_channel_and_publishes_response(self, router, registry, mock_conn):
+        """Happy path: channel answers, response published to NATS."""
+        ch = _make_mock_channel("telegram")
+        ch.ask_question = AsyncMock(return_value="Yes")
+        registry.register(ch)
+
+        data = {
+            "request_id": "req-1",
+            "task_id": "task-1",
+            "questions": [
+                {
+                    "question": "Continue?",
+                    "options": [
+                        {"label": "Yes", "description": "Proceed"},
+                        {"label": "No", "description": "Stop"},
+                    ],
+                }
+            ],
+        }
+
+        await router._handle_help_request(data)
+
+        ch.ask_question.assert_called_once()
+        call_kwargs = ch.ask_question.call_args.kwargs
+        assert call_kwargs["chat_id"] == ""
+        assert call_kwargs["question_id"] == "req-1"
+        assert "Continue?" in call_kwargs["question"]
+
+        mock_conn.publish.assert_called_once_with(
+            "figaro.help.req-1.response",
+            {
+                "request_id": "req-1",
+                "answers": {"Continue?": "Yes"},
+                "source": "telegram",
+            },
+        )
+
+    async def test_channel_returns_none_no_publish(self, router, registry, mock_conn):
+        """When channel returns None (timeout), no response is published."""
+        ch = _make_mock_channel("telegram")
+        ch.ask_question = AsyncMock(return_value=None)
+        registry.register(ch)
+
+        data = {
+            "request_id": "req-1",
+            "task_id": "task-1",
+            "questions": [{"question": "Continue?"}],
+        }
+
+        await router._handle_help_request(data)
+
+        ch.ask_question.assert_called_once()
+        mock_conn.publish.assert_not_called()
+
+    async def test_channel_error_is_caught(self, router, registry, mock_conn):
+        """When channel raises an exception, it is caught and logged."""
+        ch = _make_mock_channel("telegram")
+        ch.ask_question = AsyncMock(side_effect=RuntimeError("bot down"))
+        registry.register(ch)
+
+        data = {
+            "request_id": "req-1",
+            "task_id": "task-1",
+            "questions": [{"question": "Help?"}],
+        }
+
+        # Should not raise
+        await router._handle_help_request(data)
+        mock_conn.publish.assert_not_called()
+
+    async def test_first_channel_to_respond_wins(self, router, registry, mock_conn):
+        """With multiple channels, the first one to respond is used."""
+        ch1 = _make_mock_channel("telegram")
+        ch1.ask_question = AsyncMock(return_value="Answer from telegram")
+        ch2 = _make_mock_channel("whatsapp")
+        ch2.ask_question = AsyncMock(return_value="Answer from whatsapp")
+        registry.register(ch1)
+        registry.register(ch2)
+
+        data = {
+            "request_id": "req-1",
+            "task_id": "task-1",
+            "questions": [{"question": "Pick one?"}],
+        }
+
+        await router._handle_help_request(data)
+
+        # Only first channel should be asked
+        ch1.ask_question.assert_called_once()
+        ch2.ask_question.assert_not_called()
+
+        # Response should be from first channel
+        mock_conn.publish.assert_called_once()
+        call_args = mock_conn.publish.call_args
+        assert call_args[0][1]["source"] == "telegram"
+
+    async def test_fallback_to_second_channel(self, router, registry, mock_conn):
+        """When first channel returns None, second channel is tried."""
+        ch1 = _make_mock_channel("telegram")
+        ch1.ask_question = AsyncMock(return_value=None)
+        ch2 = _make_mock_channel("whatsapp")
+        ch2.ask_question = AsyncMock(return_value="Got it")
+        registry.register(ch1)
+        registry.register(ch2)
+
+        data = {
+            "request_id": "req-1",
+            "task_id": "task-1",
+            "questions": [{"question": "Need help?"}],
+        }
+
+        await router._handle_help_request(data)
+
+        ch1.ask_question.assert_called_once()
+        ch2.ask_question.assert_called_once()
+        mock_conn.publish.assert_called_once()
+        assert mock_conn.publish.call_args[0][1]["source"] == "whatsapp"
+
+    async def test_first_channel_errors_second_answers(self, router, registry, mock_conn):
+        """When first channel errors, second channel is tried."""
+        ch1 = _make_mock_channel("telegram")
+        ch1.ask_question = AsyncMock(side_effect=RuntimeError("fail"))
+        ch2 = _make_mock_channel("whatsapp")
+        ch2.ask_question = AsyncMock(return_value="OK")
+        registry.register(ch1)
+        registry.register(ch2)
+
+        data = {
+            "request_id": "req-1",
+            "task_id": "task-1",
+            "questions": [{"question": "Help?"}],
+        }
+
+        await router._handle_help_request(data)
+
+        mock_conn.publish.assert_called_once()
+        assert mock_conn.publish.call_args[0][1]["source"] == "whatsapp"
+
+    async def test_no_channels_registered(self, router, registry, mock_conn):
+        """When no channels are registered, nothing happens."""
+        data = {
+            "request_id": "req-1",
+            "task_id": "task-1",
+            "questions": [{"question": "Help?"}],
+        }
+
+        await router._handle_help_request(data)
+        mock_conn.publish.assert_not_called()
+
+    async def test_question_text_includes_options(self, router, registry, mock_conn):
+        """Question text passed to channel includes option labels and descriptions."""
+        ch = _make_mock_channel("telegram")
+        ch.ask_question = AsyncMock(return_value="Retry")
+        registry.register(ch)
+
+        data = {
+            "request_id": "req-1",
+            "task_id": "task-42",
+            "questions": [
+                {
+                    "question": "What to do?",
+                    "options": [
+                        {"label": "Retry", "description": "Try again"},
+                        {"label": "Skip", "description": "Move on"},
+                    ],
+                }
+            ],
+        }
+
+        await router._handle_help_request(data)
+
+        question_text = ch.ask_question.call_args.kwargs["question"]
+        assert "task-42" in question_text
+        assert "What to do?" in question_text
+        assert "Retry" in question_text
+        assert "Try again" in question_text
+        assert "Skip" in question_text
+
+    async def test_options_flattened_across_questions(self, router, registry, mock_conn):
+        """Options from all questions are flattened into the options list passed to channel."""
+        ch = _make_mock_channel("telegram")
+        ch.ask_question = AsyncMock(return_value="A")
+        registry.register(ch)
+
+        data = {
+            "request_id": "req-1",
+            "task_id": "task-1",
+            "questions": [
+                {"question": "Q1?", "options": [{"label": "A"}]},
+                {"question": "Q2?", "options": [{"label": "B"}]},
+            ],
+        }
+
+        await router._handle_help_request(data)
+
+        options = ch.ask_question.call_args.kwargs["options"]
+        labels = [o["label"] for o in options]
+        assert "A" in labels
+        assert "B" in labels
+
+    async def test_multiple_questions_all_get_same_answer(self, router, registry, mock_conn):
+        """Each question in the request gets the same answer in the published response."""
+        ch = _make_mock_channel("telegram")
+        ch.ask_question = AsyncMock(return_value="yes")
+        registry.register(ch)
+
+        data = {
+            "request_id": "req-1",
+            "task_id": "task-1",
+            "questions": [
+                {"question": "Q1?"},
+                {"question": "Q2?"},
+            ],
+        }
+
+        await router._handle_help_request(data)
+
+        answers = mock_conn.publish.call_args[0][1]["answers"]
+        assert answers == {"Q1?": "yes", "Q2?": "yes"}
