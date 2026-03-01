@@ -89,6 +89,34 @@ class _WsBackend:
         await self._ws.close()
 
 
+async def _forward_client_to_worker(
+    client_ws: WebSocket, backend: _TcpBackend | _WsBackend
+) -> None:
+    """Forward messages from browser to worker."""
+    try:
+        while True:
+            data = await client_ws.receive_bytes()
+            await backend.send(data)
+    except WebSocketDisconnect:
+        logger.debug("Client disconnected")
+    except Exception as e:
+        logger.debug(f"Client->Worker error: {e}")
+
+
+async def _forward_worker_to_client(
+    client_ws: WebSocket, backend: _TcpBackend | _WsBackend
+) -> None:
+    """Forward messages from worker to browser."""
+    try:
+        while True:
+            message = await backend.recv()
+            if message is None:
+                break
+            await client_ws.send_bytes(message)
+    except Exception as e:
+        logger.debug(f"Worker->Client error: {e}")
+
+
 async def proxy_vnc(
     client_ws: WebSocket,
     worker_id: str,
@@ -159,33 +187,10 @@ async def proxy_vnc(
 
     # Now proxy data between client and worker
     try:
-
-        async def client_to_worker():
-            """Forward messages from browser to worker."""
-            try:
-                while True:
-                    data = await client_ws.receive_bytes()
-                    await backend.send(data)
-            except WebSocketDisconnect:
-                logger.debug("Client disconnected")
-            except Exception as e:
-                logger.debug(f"Client->Worker error: {e}")
-
-        async def worker_to_client():
-            """Forward messages from worker to browser."""
-            try:
-                while True:
-                    message = await backend.recv()
-                    if message is None:
-                        break
-                    await client_ws.send_bytes(message)
-            except Exception as e:
-                logger.debug(f"Worker->Client error: {e}")
-
         # Run both directions concurrently
         await asyncio.gather(
-            client_to_worker(),
-            worker_to_client(),
+            _forward_client_to_worker(client_ws, backend),
+            _forward_worker_to_client(client_ws, backend),
             return_exceptions=True,
         )
 

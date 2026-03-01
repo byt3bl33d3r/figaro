@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import functools
 import logging
 import platform
 import socket
@@ -12,6 +13,19 @@ from figaro_nats import NatsConnection, Subjects
 from figaro_nats.streams import ensure_streams
 
 logger = logging.getLogger(__name__)
+
+
+async def _handle_help_response(
+    data: dict[str, Any],
+    *,
+    request_id: str,
+    response_data: dict[str, Any],
+    response_event: asyncio.Event,
+) -> None:
+    """Handle a help response message by updating shared state and signaling the event."""
+    if data.get("request_id") == request_id:
+        response_data.update(data)
+        response_event.set()
 
 
 class SupervisorNatsClient:
@@ -73,8 +87,9 @@ class SupervisorNatsClient:
 
     async def _setup_subscriptions(self) -> None:
         """Subscribe to subjects this supervisor needs."""
-        # Task assignments from orchestrator
-        sub = await self._conn.subscribe(
+        # Task assignments from orchestrator (request/reply so orchestrator
+        # can detect dead supervisors via timeout)
+        sub = await self._conn.subscribe_request(
             Subjects.supervisor_task(self._supervisor_id),
             self._handle_task,
         )
@@ -108,8 +123,9 @@ class SupervisorNatsClient:
                 await asyncio.sleep(2)
         logger.warning("Failed to register supervisor %s after retries", self._supervisor_id)
 
-    async def _handle_task(self, data: dict[str, Any]) -> None:
+    async def _handle_task(self, data: dict[str, Any]) -> dict[str, Any]:
         await self._emit("task", data)
+        return {"status": "ok"}
 
     async def _handle_help_response(self, data: dict[str, Any]) -> None:
         await self._emit("help_response", data)
@@ -224,15 +240,15 @@ class SupervisorNatsClient:
         response_event = asyncio.Event()
         response_data: dict[str, Any] = {}
 
-        async def _on_response(data: dict[str, Any]) -> None:
-            if data.get("request_id") == request_id:
-                response_data.update(data)
-                response_event.set()
-
         # Subscribe to the specific response subject
         sub = await self._conn.subscribe(
             Subjects.help_response(request_id),
-            _on_response,
+            functools.partial(
+                _handle_help_response,
+                request_id=request_id,
+                response_data=response_data,
+                response_event=response_event,
+            ),
         )
 
         try:

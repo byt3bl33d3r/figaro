@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import functools
 import logging
 from typing import Any
 
@@ -12,14 +14,57 @@ from .registry import ChannelRegistry
 logger = logging.getLogger(__name__)
 
 
+async def _handle_channel_message(
+    chat_id: str,
+    text: str,
+    task_id: str | None,
+    *,
+    conn: NatsConnection,
+    channel_name: str,
+) -> None:
+    """Handle an incoming message from a channel by publishing to NATS."""
+    await conn.publish(
+        Subjects.gateway_task(channel_name),
+        {
+            "channel": channel_name,
+            "chat_id": chat_id,
+            "text": text,
+            "task_id": task_id,
+        },
+    )
+    logger.debug(f"Published message from {channel_name} chat {chat_id} to NATS")
+
+
+async def _handle_send_message(
+    data: dict[str, Any],
+    *,
+    registry: ChannelRegistry,
+    channel_name: str,
+) -> None:
+    """Handle an outbound send message from NATS by routing to the channel."""
+    channel = registry.get(channel_name)
+    if channel is None:
+        logger.warning(f"Channel {channel_name} not found for send")
+        return
+    chat_id = str(data.get("chat_id", ""))
+    if data.get("image") and hasattr(channel, "send_photo"):
+        await channel.send_photo(chat_id, data["image"], data.get("caption"))
+    else:
+        text = data.get("text", "")
+        await channel.send_message(chat_id, text)
+
+
 class NatsRouter:
     """Routes NATS messages to/from communication channels."""
+
+    REGISTRATION_INTERVAL = 30  # seconds between re-registrations
 
     def __init__(self, nats_url: str, registry: ChannelRegistry) -> None:
         self._nats_url = nats_url
         self._registry = registry
         self._conn = NatsConnection(url=nats_url, name="gateway")
         self._subscriptions: list[Any] = []
+        self._registration_task: asyncio.Task[None] | None = None
 
     @property
     def conn(self) -> NatsConnection:
@@ -32,14 +77,20 @@ class NatsRouter:
         # Start all registered channels
         for channel in self._registry.get_all():
             # Register message callback BEFORE starting so it's available during start
-            channel.on_message(self._make_message_handler(channel.name))
+            channel.on_message(
+                functools.partial(
+                    _handle_channel_message, conn=self._conn, channel_name=channel.name
+                )
+            )
 
             await channel.start()
 
             # Subscribe to NATS subjects for this channel
             sub = await self._conn.subscribe(
                 Subjects.gateway_send(channel.name),
-                self._make_send_handler(channel.name),
+                functools.partial(
+                    _handle_send_message, registry=self._registry, channel_name=channel.name
+                ),
             )
             self._subscriptions.append(sub)
 
@@ -61,8 +112,31 @@ class NatsRouter:
         )
         self._subscriptions.append(sub)
 
+        # Periodically re-publish channel registrations so the orchestrator
+        # discovers channels regardless of startup order or restarts.
+        self._registration_task = asyncio.create_task(self._registration_loop())
+
+    async def _registration_loop(self) -> None:
+        """Periodically re-publish channel registrations."""
+        try:
+            while True:
+                await asyncio.sleep(self.REGISTRATION_INTERVAL)
+                for channel in self._registry.get_all():
+                    await self._conn.publish(
+                        Subjects.gateway_register(channel.name),
+                        {"channel": channel.name, "status": "online"},
+                    )
+        except asyncio.CancelledError:
+            pass
+
     async def stop(self) -> None:
         """Stop all channels and disconnect from NATS."""
+        if self._registration_task:
+            self._registration_task.cancel()
+            try:
+                await self._registration_task
+            except asyncio.CancelledError:
+                pass
         for channel in self._registry.get_all():
             try:
                 await channel.stop()
@@ -70,40 +144,6 @@ class NatsRouter:
                 logger.exception(f"Error stopping channel {channel.name}")
 
         await self._conn.close()
-
-    def _make_message_handler(self, channel_name: str):
-        """Create a callback for incoming messages from a channel."""
-
-        async def _handler(chat_id: str, text: str, task_id: str | None) -> None:
-            await self._conn.publish(
-                Subjects.gateway_task(channel_name),
-                {
-                    "channel": channel_name,
-                    "chat_id": chat_id,
-                    "text": text,
-                    "task_id": task_id,
-                },
-            )
-            logger.debug(f"Published message from {channel_name} chat {chat_id} to NATS")
-
-        return _handler
-
-    def _make_send_handler(self, channel_name: str):
-        """Create a handler for outbound send messages from NATS."""
-
-        async def _handler(data: dict[str, Any]) -> None:
-            channel = self._registry.get(channel_name)
-            if channel is None:
-                logger.warning(f"Channel {channel_name} not found for send")
-                return
-            chat_id = str(data.get("chat_id", ""))
-            if data.get("image") and hasattr(channel, "send_photo"):
-                await channel.send_photo(chat_id, data["image"], data.get("caption"))
-            else:
-                text = data.get("text", "")
-                await channel.send_message(chat_id, text)
-
-        return _handler
 
     async def _handle_help_request(self, data: dict[str, Any]) -> None:
         """Route help request to appropriate channel(s)."""

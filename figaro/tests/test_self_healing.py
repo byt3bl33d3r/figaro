@@ -79,6 +79,8 @@ def nats_service(
     # Mock the NATS connection so publish_supervisor_task works
     mock_conn = MagicMock()
     mock_conn.publish = AsyncMock()
+    mock_conn.request = AsyncMock(return_value={"status": "ok"})
+    mock_conn.js_publish = AsyncMock()
     mock_conn.is_connected = True
     service._conn = mock_conn
 
@@ -169,7 +171,7 @@ class TestMaybeHealFailedTask:
 
         # 5. Run the method under test
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_heal_failed_task(original_task.task_id)
 
@@ -213,7 +215,7 @@ class TestMaybeHealFailedTask:
 
         # 4. Run
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_heal_failed_task(original_task.task_id)
 
@@ -242,7 +244,7 @@ class TestMaybeHealFailedTask:
 
         # 3. Run
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_heal_failed_task(healer_task.task_id)
 
@@ -272,7 +274,7 @@ class TestMaybeHealFailedTask:
 
         # 3. Run
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_heal_failed_task(optimizer_task.task_id)
 
@@ -309,7 +311,7 @@ class TestMaybeHealFailedTask:
 
         # 4. Run
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_heal_failed_task(original_task.task_id)
 
@@ -348,7 +350,7 @@ class TestMaybeHealFailedTask:
 
         # 4. Run -- should not raise
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_heal_failed_task(original_task.task_id)
 
@@ -408,7 +410,7 @@ class TestMaybeHealFailedTask:
 
         # 7. Run
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_heal_failed_task(original_task.task_id)
 
@@ -465,7 +467,7 @@ class TestMaybeHealFailedTask:
 
         # 6. Run
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_heal_failed_task(original_task.task_id)
 
@@ -530,7 +532,7 @@ class TestMaybeHealFailedTask:
 
         # 5. Run
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_heal_failed_task(original_task.task_id)
 
@@ -611,7 +613,7 @@ class TestMaybeOptimizeScheduledTask:
 
         # 4. Run
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_optimize_scheduled_task(original_task.task_id)
 
@@ -673,9 +675,9 @@ class TestMaybeOptimizeScheduledTask:
 
         # 6. Run
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ), patch(
-            "figaro.db.repositories.scheduled.ScheduledTaskRepository", return_value=mock_sched_repo
+            "figaro.services.nats_service.ScheduledTaskRepository", return_value=mock_sched_repo
         ):
             await nats_service._maybe_optimize_scheduled_task(original_task.task_id)
 
@@ -737,9 +739,9 @@ class TestMaybeOptimizeScheduledTask:
 
         # 6. Run
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ), patch(
-            "figaro.db.repositories.scheduled.ScheduledTaskRepository", return_value=mock_sched_repo
+            "figaro.services.nats_service.ScheduledTaskRepository", return_value=mock_sched_repo
         ):
             await nats_service._maybe_optimize_scheduled_task(original_task.task_id)
 

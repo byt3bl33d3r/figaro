@@ -46,8 +46,7 @@ class TelegramChannel:
             if chat_id
             else (list(self._bot._allowed_chat_ids)[0] if self._bot._allowed_chat_ids else 0)
         )
-        parse_mode = kwargs.get("parse_mode", "Markdown")
-        await self._bot.send_message(int_chat_id, text, parse_mode=parse_mode)
+        await self._bot.send_message(int_chat_id, text)
 
     async def send_photo(self, chat_id: str, image_b64: str, caption: str | None = None) -> None:
         """Send a photo via Telegram."""

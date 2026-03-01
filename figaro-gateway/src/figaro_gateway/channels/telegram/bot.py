@@ -7,6 +7,7 @@ import logging
 from collections.abc import Awaitable, Callable
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
+from telegramify_markdown import convert as md_to_telegram
 from telegram.ext import (
     Application,
     CallbackQueryHandler,
@@ -121,9 +122,13 @@ class TelegramBot:
         self,
         chat_id: int,
         text: str,
-        parse_mode: str | None = "Markdown",
     ) -> int | None:
-        """Send a message to a chat. Returns message_id if successful."""
+        """Send a message to a chat. Returns message_id if successful.
+
+        Markdown in the text is converted to Telegram entities via
+        ``telegramify-markdown`` so formatting renders correctly without
+        needing a ``parse_mode``.
+        """
         if not self._app or not self._running:
             logger.warning("Telegram bot not running, cannot send message")
             return None
@@ -132,35 +137,37 @@ class TelegramBot:
             logger.warning(f"Chat {chat_id} not in allowed list")
             return None
 
-        try:
-            # Telegram message limit is 4096 characters
-            if len(text) > 4000:
-                text = text[:4000] + "..."
+        # Telegram message limit is 4096 characters
+        if len(text) > 4000:
+            text = text[:4000] + "..."
 
+        # Convert standard markdown to Telegram (text, entities)
+        try:
+            tg_text, entities = md_to_telegram(text)
+            entity_dicts = [e.to_dict() for e in entities] if entities else None
+        except Exception:
+            logger.warning("Failed to convert markdown, sending as plain text")
+            tg_text, entity_dicts = text, None
+
+        try:
             msg = await self._app.bot.send_message(
                 chat_id=chat_id,
-                text=text,
-                parse_mode=parse_mode,
+                text=tg_text,
+                entities=entity_dicts,
             )
             return msg.message_id
         except Exception:
-            if parse_mode:
-                # Retry without parse_mode if Markdown parsing failed
-                logger.warning(
-                    f"Failed to send message with parse_mode={parse_mode}, retrying as plain text"
+            # Retry as plain text if entity send failed
+            logger.warning("Failed to send message with entities, retrying as plain text")
+            try:
+                msg = await self._app.bot.send_message(
+                    chat_id=chat_id,
+                    text=text,
                 )
-                try:
-                    msg = await self._app.bot.send_message(
-                        chat_id=chat_id,
-                        text=text,
-                        parse_mode=None,
-                    )
-                    return msg.message_id
-                except Exception:
-                    logger.exception(f"Failed to send plain text message to chat {chat_id}")
-                    return None
-            logger.exception(f"Failed to send message to chat {chat_id}")
-            return None
+                return msg.message_id
+            except Exception:
+                logger.exception(f"Failed to send plain text message to chat {chat_id}")
+                return None
 
     async def send_photo(
         self,
@@ -254,7 +261,14 @@ class TelegramBot:
             keyboard = InlineKeyboardMarkup(buttons)
 
         # Create future for response
-        future: asyncio.Future[str] = asyncio.get_event_loop().create_future()
+        future: asyncio.Future[str] = asyncio.get_running_loop().create_future()
+
+        # Convert markdown in the question text to Telegram entities
+        try:
+            tg_text, entities = md_to_telegram(message_text)
+            entity_dicts = [e.to_dict() for e in entities] if entities else None
+        except Exception:
+            tg_text, entity_dicts = message_text, None
 
         # Send to target chats and track
         for cid in target_chats:
@@ -263,8 +277,8 @@ class TelegramBot:
             try:
                 msg = await self._app.bot.send_message(
                     chat_id=cid,
-                    text=message_text,
-                    parse_mode="Markdown",
+                    text=tg_text,
+                    entities=entity_dicts,
                     reply_markup=keyboard,
                 )
                 # Track this question
@@ -332,7 +346,6 @@ class TelegramBot:
                         msg_text = getattr(query.message, "text", "") or ""
                         await query.message.edit_text(
                             msg_text + f"\n\nAnswered: {answer}",
-                            parse_mode="Markdown",
                         )
                     except Exception:
                         pass

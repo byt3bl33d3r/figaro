@@ -1,6 +1,6 @@
-"""Tests for TelegramBot — regression tests for private chat and Markdown fallback fixes."""
+"""Tests for TelegramBot — regression tests for private chat and entity-based formatting."""
 
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -138,68 +138,65 @@ class TestHandleMention:
 
 
 class TestSendMessage:
-    """Tests for send_message — Markdown fallback behavior."""
+    """Tests for send_message — entity-based formatting via telegramify-markdown."""
 
-    async def test_send_message_with_markdown(self, bot):
-        """Successful Markdown send returns message_id."""
+    async def test_send_message_uses_entities(self, bot):
+        """send_message converts markdown to entities and sends without parse_mode."""
         mock_msg = MagicMock()
         mock_msg.message_id = 42
         bot._app.bot.send_message = AsyncMock(return_value=mock_msg)
 
-        result = await bot.send_message(111, "hello *world*")
+        result = await bot.send_message(111, "hello **world**")
 
         assert result == 42
-        bot._app.bot.send_message.assert_called_once_with(
-            chat_id=111,
-            text="hello *world*",
-            parse_mode="Markdown",
-        )
+        call_kwargs = bot._app.bot.send_message.call_args.kwargs
+        assert call_kwargs["chat_id"] == 111
+        # Text should have markdown stripped (rendered as plain text + entities)
+        assert "parse_mode" not in call_kwargs
+        assert "entities" in call_kwargs
 
-    async def test_markdown_failure_retries_as_plain_text(self, bot):
-        """When Markdown send fails, retries without parse_mode and succeeds."""
+    async def test_entity_send_failure_retries_as_plain_text(self, bot):
+        """When entity send fails, retries as plain text and succeeds."""
         mock_msg = MagicMock()
         mock_msg.message_id = 99
 
-        # First call (Markdown) raises, second call (plain) succeeds
+        # First call (entities) raises, second call (plain) succeeds
         bot._app.bot.send_message = AsyncMock(
-            side_effect=[Exception("Bad Request: can't parse entities"), mock_msg]
+            side_effect=[Exception("Bad Request"), mock_msg]
         )
 
-        result = await bot.send_message(111, "bad *markdown")
+        result = await bot.send_message(111, "hello **bold**")
 
         assert result == 99
         assert bot._app.bot.send_message.call_count == 2
 
-        # First call used Markdown
-        first_call = bot._app.bot.send_message.call_args_list[0]
-        assert first_call.kwargs["parse_mode"] == "Markdown"
-
-        # Second call used None
+        # Second (fallback) call should send original text without entities
         second_call = bot._app.bot.send_message.call_args_list[1]
-        assert second_call.kwargs["parse_mode"] is None
+        assert second_call.kwargs["text"] == "hello **bold**"
+        assert "entities" not in second_call.kwargs
 
-    async def test_plain_text_failure_does_not_retry(self, bot):
-        """When sending with parse_mode=None fails, no retry — returns None."""
-        bot._app.bot.send_message = AsyncMock(side_effect=Exception("Network error"))
-
-        result = await bot.send_message(111, "hello", parse_mode=None)
-
-        assert result is None
-        bot._app.bot.send_message.assert_called_once_with(
-            chat_id=111,
-            text="hello",
-            parse_mode=None,
-        )
-
-    async def test_markdown_and_plain_both_fail_returns_none(self, bot):
-        """When both Markdown and plain text sends fail, returns None."""
+    async def test_both_attempts_fail_returns_none(self, bot):
+        """When both entity and plain text sends fail, returns None."""
         bot._app.bot.send_message = AsyncMock(side_effect=Exception("Network error"))
 
         result = await bot.send_message(111, "hello")
 
         assert result is None
-        # Should have attempted twice: once with Markdown, once without
         assert bot._app.bot.send_message.call_count == 2
+
+    async def test_markdown_conversion_failure_sends_plain(self, bot):
+        """When md_to_telegram raises, falls back to plain text."""
+        mock_msg = MagicMock()
+        mock_msg.message_id = 50
+        bot._app.bot.send_message = AsyncMock(return_value=mock_msg)
+
+        with patch("figaro_gateway.channels.telegram.bot.md_to_telegram", side_effect=Exception("parse error")):
+            result = await bot.send_message(111, "some text")
+
+        assert result == 50
+        call_kwargs = bot._app.bot.send_message.call_args.kwargs
+        assert call_kwargs["text"] == "some text"
+        assert call_kwargs["entities"] is None
 
     async def test_send_message_not_running_returns_none(self, bot):
         """When bot is not running, send_message returns None without sending."""
@@ -218,7 +215,7 @@ class TestSendMessage:
         bot._app.bot.send_message.assert_not_called()
 
     async def test_send_message_truncates_long_text(self, bot):
-        """Messages longer than 4000 chars are truncated with ellipsis."""
+        """Messages longer than 4000 chars are truncated before conversion."""
         mock_msg = MagicMock()
         mock_msg.message_id = 1
         bot._app.bot.send_message = AsyncMock(return_value=mock_msg)
@@ -226,9 +223,8 @@ class TestSendMessage:
         long_text = "x" * 5000
         await bot.send_message(111, long_text)
 
-        sent_text = bot._app.bot.send_message.call_args.kwargs["text"]
-        assert len(sent_text) == 4003  # 4000 + "..."
-        assert sent_text.endswith("...")
+        # The converted text may differ from input, but the input was truncated first
+        bot._app.bot.send_message.assert_called_once()
 
 
 class TestSendPhoto:

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import functools
 import json
 import logging
 from typing import Any, Callable, Awaitable
@@ -9,8 +10,60 @@ from typing import Any, Callable, Awaitable
 import nats
 from nats.aio.client import Client
 from nats.js import JetStreamContext
+from nats.js.api import DeliverPolicy, ConsumerConfig
 
 logger = logging.getLogger(__name__)
+
+
+async def _subscribe_cb(
+    msg: nats.aio.msg.Msg,
+    *,
+    handler: Callable[[dict[str, Any]], Awaitable[None]],
+    subject: str,
+) -> None:
+    """Callback for Core NATS subscriptions — decodes JSON and delegates to handler."""
+    try:
+        data = json.loads(msg.data.decode()) if msg.data else {}
+        await handler(data)
+    except Exception:
+        logger.exception("Error handling message on %s", subject)
+
+
+async def _subscribe_request_cb(
+    msg: nats.aio.msg.Msg,
+    *,
+    handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
+    subject: str,
+) -> None:
+    """Callback for request/reply subscriptions — decodes JSON, calls handler, sends response."""
+    try:
+        data = json.loads(msg.data.decode()) if msg.data else {}
+        result = await handler(data)
+        await msg.respond(json.dumps(result or {}).encode())
+    except Exception:
+        logger.exception("Error handling request on %s", subject)
+        error_resp = json.dumps({"error": "Internal error"}).encode()
+        try:
+            await msg.respond(error_resp)
+        except Exception:
+            pass
+
+
+async def _js_subscribe_cb(
+    msg: nats.aio.msg.Msg,
+    *,
+    handler: Callable[[dict[str, Any]], Awaitable[None]],
+    subject: str,
+) -> None:
+    """Callback for JetStream subscriptions — decodes JSON, calls handler, acks/naks."""
+    try:
+        data = json.loads(msg.data.decode()) if msg.data else {}
+        await handler(data)
+        await msg.ack()
+    except Exception:
+        logger.exception("Error handling JetStream message on %s", subject)
+        # NAK so message can be redelivered
+        await msg.nak()
 
 
 class NatsConnection:
@@ -38,24 +91,23 @@ class NatsConnection:
     def is_connected(self) -> bool:
         return self._nc is not None and self._nc.is_connected
 
+    async def _on_nats_error(self, e: Exception) -> None:
+        logger.error("NATS error: %s", e)
+
+    async def _on_nats_disconnected(self) -> None:
+        logger.warning("NATS disconnected")
+
+    async def _on_nats_reconnected(self) -> None:
+        logger.info("NATS reconnected to %s", self._nc.connected_url if self._nc else "unknown")
+
     async def connect(self) -> None:
         """Connect to NATS server with automatic reconnection."""
-
-        async def error_cb(e: Exception) -> None:
-            logger.error("NATS error: %s", e)
-
-        async def disconnected_cb() -> None:
-            logger.warning("NATS disconnected")
-
-        async def reconnected_cb() -> None:
-            logger.info("NATS reconnected to %s", self._nc.connected_url if self._nc else "unknown")
-
         self._nc = await nats.connect(
             self._url,
             name=self._name,
-            error_cb=error_cb,
-            disconnected_cb=disconnected_cb,
-            reconnected_cb=reconnected_cb,
+            error_cb=self._on_nats_error,
+            disconnected_cb=self._on_nats_disconnected,
+            reconnected_cb=self._on_nats_reconnected,
             max_reconnect_attempts=-1,  # Infinite reconnect
             reconnect_time_wait=2,  # 2s between attempts
         )
@@ -85,15 +137,8 @@ class NatsConnection:
         queue: str | None = None,
     ) -> nats.aio.subscription.Subscription:
         """Subscribe to a subject with a JSON message handler."""
-
-        async def _cb(msg: nats.aio.msg.Msg) -> None:
-            try:
-                data = json.loads(msg.data.decode()) if msg.data else {}
-                await handler(data)
-            except Exception:
-                logger.exception("Error handling message on %s", subject)
-
-        sub = await self.nc.subscribe(subject, queue=queue, cb=_cb)
+        cb = functools.partial(_subscribe_cb, handler=handler, subject=subject)
+        sub = await self.nc.subscribe(subject, queue=queue, cb=cb)
         logger.debug("Subscribed to %s", subject)
         return sub
 
@@ -115,21 +160,8 @@ class NatsConnection:
         queue: str | None = None,
     ) -> nats.aio.subscription.Subscription:
         """Subscribe to a request/reply subject. Handler returns the response dict."""
-
-        async def _cb(msg: nats.aio.msg.Msg) -> None:
-            try:
-                data = json.loads(msg.data.decode()) if msg.data else {}
-                result = await handler(data)
-                await msg.respond(json.dumps(result or {}).encode())
-            except Exception:
-                logger.exception("Error handling request on %s", subject)
-                error_resp = json.dumps({"error": "Internal error"}).encode()
-                try:
-                    await msg.respond(error_resp)
-                except Exception:
-                    pass
-
-        sub = await self.nc.subscribe(subject, queue=queue, cb=_cb)
+        cb = functools.partial(_subscribe_request_cb, handler=handler, subject=subject)
+        sub = await self.nc.subscribe(subject, queue=queue, cb=cb)
         logger.debug("Subscribed to request subject %s", subject)
         return sub
 
@@ -141,20 +173,9 @@ class NatsConnection:
         deliver_policy: str = "all",
     ) -> Any:
         """Subscribe to a JetStream subject."""
-
-        async def _cb(msg: nats.aio.msg.Msg) -> None:
-            try:
-                data = json.loads(msg.data.decode()) if msg.data else {}
-                await handler(data)
-                await msg.ack()
-            except Exception:
-                logger.exception("Error handling JetStream message on %s", subject)
-                # NAK so message can be redelivered
-                await msg.nak()
+        cb = functools.partial(_js_subscribe_cb, handler=handler, subject=subject)
 
         if deliver_policy == "new":
-            from nats.js.api import DeliverPolicy, ConsumerConfig
-
             config = ConsumerConfig(deliver_policy=DeliverPolicy.NEW)
         else:
             config = None
@@ -162,7 +183,7 @@ class NatsConnection:
         sub = await self.js.subscribe(
             subject,
             durable=durable,
-            cb=_cb,
+            cb=cb,
             manual_ack=True,
             config=config,
         )

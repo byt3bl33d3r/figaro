@@ -7,6 +7,7 @@ dependencies = [
     "figaro-nats",
     "python-telegram-bot>=21.10",
     "pydantic-settings>=2.7.0",
+    "telegramify-markdown>=1.0.0rc1",
 ]
 
 [tool.uv.sources]

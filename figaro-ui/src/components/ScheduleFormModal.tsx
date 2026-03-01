@@ -37,7 +37,7 @@ export function ScheduleFormModal({ onClose, editTask }: Props) {
   const [notifyOnComplete, setNotifyOnComplete] = useState(editTask?.notify_on_complete ?? false);
   const [selfLearning, setSelfLearning] = useState(editTask?.self_learning ?? true);
   const [selfHealing, setSelfHealing] = useState(editTask?.self_healing ?? true);
-  const [selfLearningMaxRuns, setSelfLearningMaxRuns] = useState(editTask?.self_learning_max_runs?.toString() ?? '');
+  const [selfLearningMaxRuns, setSelfLearningMaxRuns] = useState(editTask?.self_learning_max_runs?.toString() ?? '4');
   const [promptEditorOpen, setPromptEditorOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);

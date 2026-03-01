@@ -41,7 +41,7 @@ You can also manage everything by chatting with the supervisor agent through the
 ### Prerequisites
 
 - Docker and Docker Compose
-- Claude credentials (`~/.claude.json` and `~/.claude/.credentials.json`) -- created by running `claude` and signing in. Once logged in, you can export the credentials file for use in containers:
+- Claude credentials (`~/.claude.json` and `~/.claude/.credentials.json`) -- created by running `claude` and signing in. On MacOS (assuming you have a Claude Code subscription) once logged in, you can export the credentials file for use in containers with the following command:
   ```bash
   security find-generic-password -s "Claude Code-credentials" -w > ~/.claude/.credentials.json
   ```
@@ -68,7 +68,7 @@ docker compose -f docker-compose.yml -f docker-compose.dev.yml up --build
 ```
 
 > [!CAUTION]
-> The `docker-compose.prod.yml` overlay binds ports to `0.0.0.0`, making NATS and the orchestrator accessible from any network interface. Only use this if you understand the security implications and have appropriate firewall rules in place. Please read [Security](#security) for understand known attack surface and mitigations.
+> The `docker-compose.prod.yml` overlay binds ports to `0.0.0.0`, making NATS and the orchestrator accessible from any network interface. Only use this if you understand the security implications and have appropriate firewall rules in place. Please read [Security](#security) to understand known attack surface.
 >
 > ```bash
 > docker compose -f docker-compose.yml -f docker-compose.prod.yml up --build

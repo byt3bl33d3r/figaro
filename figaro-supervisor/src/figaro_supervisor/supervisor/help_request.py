@@ -2,6 +2,7 @@
 
 import logging
 from typing import TYPE_CHECKING, Any
+from uuid import uuid4
 
 if TYPE_CHECKING:
     from figaro_supervisor.supervisor.client import SupervisorNatsClient
@@ -49,8 +50,6 @@ class HelpRequestHandler:
         Returns:
             A dict mapping question text to answers, or None if timeout/error
         """
-        from uuid import uuid4
-
         request_id = str(uuid4())
 
         logger.info(

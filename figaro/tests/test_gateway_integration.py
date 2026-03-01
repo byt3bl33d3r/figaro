@@ -62,6 +62,7 @@ def nats_service(
     mock_conn = MagicMock()
     mock_conn.publish = AsyncMock()
     mock_conn.js_publish = AsyncMock()
+    mock_conn.request = AsyncMock(return_value={"status": "ok"})
     mock_conn.is_connected = True
     service._conn = mock_conn
 
@@ -333,7 +334,7 @@ class TestPublishSupervisorTaskPayload:
         self, nats_service, task_manager
     ):
         """publish_supervisor_task must include source and source_metadata
-        in the payload sent to the supervisor via Core NATS."""
+        in the payload sent to the supervisor via NATS request/reply."""
 
         task = await task_manager.create_task(
             prompt="Search for flights to Paris",
@@ -343,12 +344,12 @@ class TestPublishSupervisorTaskPayload:
 
         await nats_service.publish_supervisor_task("supervisor-1", task)
 
-        # The method calls conn.publish twice: once for the supervisor task
-        # subject and once for the broadcast.  Extract the first call which
-        # carries the full task payload sent to the supervisor.
+        # The method now uses conn.request (request/reply) to verify the
+        # supervisor is alive.  Extract the request call.
         mock_conn = nats_service._conn
-        supervisor_call = mock_conn.publish.call_args_list[0]
-        subject, payload = supervisor_call[0]
+        supervisor_call = mock_conn.request.call_args
+        subject = supervisor_call[0][0]
+        payload = supervisor_call[0][1]
 
         assert subject == "figaro.supervisor.supervisor-1.task"
         assert payload["task_id"] == task.task_id
@@ -370,7 +371,7 @@ class TestPublishSupervisorTaskPayload:
         await nats_service.publish_supervisor_task("supervisor-2", task)
 
         mock_conn = nats_service._conn
-        supervisor_call = mock_conn.publish.call_args_list[0]
+        supervisor_call = mock_conn.request.call_args
         payload = supervisor_call[0][1]
         assert payload["source"] == "api"
         assert payload["source_metadata"] == {}

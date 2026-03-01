@@ -27,6 +27,7 @@ When adding new features or modifying existing ones, always ask: "What happens i
 - **Use high-level asyncio APIs.** Prefer `asyncio.create_task()`, `asyncio.gather()`, `asyncio.wait_for()`, etc. over low-level primitives like `loop.create_future()`, `ensure_future()`, or direct event loop access.
 - **Use `pathlib` for all path operations.** No `os.path` calls — always use `pathlib.Path` for constructing, joining, and manipulating file paths.
 - **Avoid nested functions.** Don't define functions inside other functions — extract them as module-level or class-level methods instead.
+- **No inline imports.** All imports must be at the top of the file — never import inside functions, methods, or conditional blocks.
 
 ## Build & Run Commands
 

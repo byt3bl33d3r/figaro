@@ -75,6 +75,8 @@ def nats_service(
     # Mock the NATS connection so publish_supervisor_task works
     mock_conn = MagicMock()
     mock_conn.publish = AsyncMock()
+    mock_conn.request = AsyncMock(return_value={"status": "ok"})
+    mock_conn.js_publish = AsyncMock()
     mock_conn.is_connected = True
     service._conn = mock_conn
 
@@ -154,7 +156,7 @@ class TestMaybeOptimizeScheduledTask:
 
         # 6. Run the method under test
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_optimize_scheduled_task(original_task.task_id)
 
@@ -202,7 +204,7 @@ class TestMaybeOptimizeScheduledTask:
 
         # 4. Run
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_optimize_scheduled_task(original_task.task_id)
 
@@ -232,7 +234,7 @@ class TestMaybeOptimizeScheduledTask:
 
         # 3. Run
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_optimize_scheduled_task(original_task.task_id)
 
@@ -276,7 +278,7 @@ class TestMaybeOptimizeScheduledTask:
 
         # 5. Run -- should not raise
         with patch(
-            "figaro.db.repositories.tasks.TaskRepository", return_value=mock_repo
+            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_optimize_scheduled_task(original_task.task_id)
 

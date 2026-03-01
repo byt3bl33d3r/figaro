@@ -20,6 +20,10 @@ from figaro.services.vnc_client import (
     type_with_client,
 )
 from figaro.services.vnc_pool import VncConnectionPool
+from figaro.db.repositories.desktop_workers import DesktopWorkerRepository
+from figaro.db.repositories.workers import WorkerSessionRepository
+from figaro.db.repositories.tasks import TaskRepository
+from figaro.db.repositories.scheduled import ScheduledTaskRepository
 
 if TYPE_CHECKING:
     from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -56,6 +60,7 @@ class NatsService:
         self._conn: NatsConnection | None = None
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._desktop_worker_ids: set[str] = set()
+        self._gateway_channels: set[str] = set()
         self._vnc_pool = VncConnectionPool(
             idle_timeout=settings.vnc_pool_idle_timeout,
             sweep_interval=settings.vnc_pool_sweep_interval,
@@ -110,8 +115,6 @@ class NatsService:
         if self._session_factory:
             # Phase 1: seed env-var entries into DB
             try:
-                from figaro.db.repositories.desktop_workers import DesktopWorkerRepository
-
                 async with self._session_factory() as session:
                     repo = DesktopWorkerRepository(session)
                     for entry in env_entries:
@@ -220,6 +223,10 @@ class NatsService:
             Subjects.gateway_task("telegram"),
             self._handle_gateway_task,
             queue="orchestrator",
+        )
+        await conn.subscribe(
+            "figaro.gateway.*.register",
+            self._handle_gateway_channel_register,
         )
 
         # API request/reply handlers (for supervisor NATS-based tool calls)
@@ -362,8 +369,6 @@ class NatsService:
         # Track worker session in database
         if self._session_factory:
             try:
-                from figaro.db.repositories.workers import WorkerSessionRepository
-
                 async with self._session_factory() as session:
                     repo = WorkerSessionRepository(session)
                     await repo.create(
@@ -381,9 +386,25 @@ class NatsService:
         return {"status": "ok"}
 
     async def _handle_supervisor_register(self, data: dict[str, Any]) -> dict[str, Any]:
-        """Handle supervisor registration."""
+        """Handle supervisor registration.
+
+        Also cleans up any stale supervisors (e.g. from Docker container restarts
+        where the old container got a different hostname/ID).
+        """
         supervisor_id = data.get("worker_id", "")
         capabilities = data.get("capabilities", [])
+
+        # Clean up stale supervisors before registering the new one
+        timed_out = await self._registry.check_heartbeats(
+            timeout=self._settings.heartbeat_timeout,
+        )
+        for client_id in timed_out:
+            conn = await self._registry.get_connection(client_id)
+            if conn and conn.client_type == ClientType.SUPERVISOR:
+                logger.warning(
+                    f"Removing stale supervisor {client_id} during registration of {supervisor_id}"
+                )
+                await self._registry.unregister(client_id)
 
         await self._registry.register(
             client_id=supervisor_id,
@@ -449,8 +470,6 @@ class NatsService:
         conn = await self._registry.get_connection(client_id)
         if conn and conn.client_type == ClientType.WORKER and self._session_factory:
             try:
-                from figaro.db.repositories.workers import WorkerSessionRepository
-
                 async with self._session_factory() as session:
                     repo = WorkerSessionRepository(session)
                     await repo.disconnect(client_id, reason="deregister")
@@ -544,6 +563,12 @@ class NatsService:
                         {"chat_id": chat_id, "text": result_text},
                     )
 
+        # Notify gateway if scheduled task has notify_on_complete
+        if task_id:
+            asyncio.create_task(
+                self._maybe_notify_gateway(task_id, result=result)
+            )
+
         # Check if completed task should trigger optimization
         if task_id:
             asyncio.create_task(self._maybe_optimize_scheduled_task(task_id))
@@ -570,6 +595,12 @@ class NatsService:
         # Broadcast to UI
         await self.conn.publish("figaro.broadcast.task_error", data)
         await self.broadcast_workers()
+
+        # Notify gateway if scheduled task has notify_on_complete
+        if task_id:
+            asyncio.create_task(
+                self._maybe_notify_gateway(task_id, error=error)
+            )
 
         # Check if failed task should trigger self-healing
         if task_id:
@@ -616,6 +647,13 @@ class NatsService:
 
     # ── Gateway handlers ────────────────────────────────────────
 
+    async def _handle_gateway_channel_register(self, data: dict[str, Any]) -> None:
+        """Track gateway channel registrations."""
+        channel = data.get("channel", "")
+        if channel:
+            self._gateway_channels.add(channel)
+            logger.info(f"Gateway channel registered: {channel}")
+
     async def _handle_gateway_task(self, data: dict[str, Any]) -> None:
         """Handle a task from a gateway (e.g., Telegram)."""
         prompt = data.get("text") or data.get("prompt", "")
@@ -639,15 +677,7 @@ class NatsService:
         )
 
         # Try to assign to an idle supervisor first (for delegation)
-        supervisor = await self._registry.claim_idle_supervisor()
-        if supervisor:
-            await self._task_manager.assign_task(task.task_id, supervisor.client_id)
-            await self.publish_supervisor_task(
-                supervisor.client_id,
-                task,
-            )
-            await self.broadcast_supervisors()
-        else:
+        if not await self._try_assign_to_supervisor(task):
             # Fall back to worker
             worker = await self._registry.claim_idle_worker()
             if worker:
@@ -698,18 +728,32 @@ class NatsService:
         self,
         supervisor_id: str,
         task: Any,
-    ) -> None:
-        """Publish a task assignment to a specific supervisor."""
-        await self.conn.publish(
-            Subjects.supervisor_task(supervisor_id),
-            {
-                "task_id": task.task_id,
-                "prompt": task.prompt,
-                "options": task.options,
-                "source": task.source,
-                "source_metadata": task.source_metadata,
-            },
-        )
+    ) -> bool:
+        """Publish a task assignment to a specific supervisor.
+
+        Uses request/reply with a short timeout to verify the supervisor is alive.
+        Returns True if the supervisor acknowledged, False if it's unreachable.
+        """
+        try:
+            await self.conn.request(
+                Subjects.supervisor_task(supervisor_id),
+                {
+                    "task_id": task.task_id,
+                    "prompt": task.prompt,
+                    "options": task.options,
+                    "source": task.source,
+                    "source_metadata": task.source_metadata,
+                },
+                timeout=5.0,
+            )
+        except Exception:
+            logger.warning(
+                f"Supervisor {supervisor_id} did not ack task {task.task_id}, "
+                "unregistering stale supervisor"
+            )
+            await self._registry.unregister(supervisor_id)
+            await self.broadcast_supervisors()
+            return False
 
         # Publish to JetStream for durable replay on UI refresh
         assigned_payload = {
@@ -727,6 +771,26 @@ class NatsService:
             "figaro.broadcast.task_submitted_to_supervisor",
             assigned_payload,
         )
+        return True
+
+    async def _try_assign_to_supervisor(self, task: Any) -> bool:
+        """Try to assign a task to an idle supervisor, retrying on stale ones.
+
+        Loops through available supervisors, verifying each is alive via
+        request/reply before committing the assignment. Dead supervisors
+        are automatically unregistered by publish_supervisor_task.
+        """
+        while True:
+            supervisor = await self._registry.claim_idle_supervisor()
+            if not supervisor:
+                return False
+            if await self.publish_supervisor_task(supervisor.client_id, task):
+                await self._task_manager.assign_task(
+                    task.task_id, supervisor.client_id
+                )
+                await self.broadcast_supervisors()
+                return True
+            # Dead supervisor was unregistered, try next one
 
     async def broadcast_workers(self) -> None:
         """Publish current worker list to broadcast subject."""
@@ -795,6 +859,62 @@ class NatsService:
             message,
         )
 
+    async def _maybe_notify_gateway(
+        self,
+        task_id: str,
+        result: Any = None,
+        error: str | None = None,
+    ) -> None:
+        """Send a gateway notification if the task's scheduled task has notify_on_complete."""
+        try:
+            if not self._session_factory:
+                return
+
+            async with self._session_factory() as session:
+                repo = TaskRepository(session)
+                task_model = await repo.get(task_id)
+                if (
+                    not task_model
+                    or not task_model.scheduled_task_id
+                    or task_model.source != "scheduler"
+                ):
+                    return
+
+                scheduled_task_id = task_model.scheduled_task_id
+
+            scheduled_task = await self._scheduler.get_scheduled_task(scheduled_task_id)
+            if not scheduled_task or not scheduled_task.notify_on_complete:
+                return
+
+            task_name = scheduled_task.name or scheduled_task_id
+            if error:
+                text = f"Scheduled task *{task_name}* failed:\n{error}"
+            else:
+                if isinstance(result, dict):
+                    result_text = result.get("result") or result.get("text", "")
+                else:
+                    result_text = result
+                if not result_text:
+                    result_text = "No result text."
+                if not isinstance(result_text, str):
+                    result_text = str(result_text)
+                text = f"Scheduled task *{task_name}* completed:\n{result_text}"
+
+            if not self._gateway_channels:
+                logger.warning(
+                    f"No gateway channels registered, cannot notify for scheduled task {scheduled_task_id}"
+                )
+                return
+
+            for channel in self._gateway_channels:
+                await self.publish_gateway_send(
+                    channel,
+                    {"chat_id": "", "text": text},
+                )
+            logger.info(f"Sent gateway notification for scheduled task {scheduled_task_id}")
+        except Exception:
+            logger.exception(f"Failed to send gateway notification for task {task_id}")
+
     # ── Pending queue processing ────────────────────────────────
 
     async def _process_pending_queue(self) -> None:
@@ -810,31 +930,13 @@ class NatsService:
 
             if task.source in ("optimizer", "healer"):
                 # Optimizer and healer tasks go to supervisors only
-                supervisor = await self._registry.claim_idle_supervisor()
-                if supervisor:
-                    await self._task_manager.assign_task(
-                        task_id, supervisor.client_id
-                    )
-                    await self.publish_supervisor_task(supervisor.client_id, task)
-                    await self.broadcast_supervisors()
-                    logger.info(
-                        f"Assigned queued {task.source} task {task_id} to supervisor {supervisor.client_id}"
-                    )
-                else:
+                if not await self._try_assign_to_supervisor(task):
                     await self._task_manager.queue_task(task_id)
                     break
             else:
                 # Regular tasks: try supervisor first, fall back to worker
-                supervisor = await self._registry.claim_idle_supervisor()
-                if supervisor:
-                    await self._task_manager.assign_task(
-                        task_id, supervisor.client_id
-                    )
-                    await self.publish_supervisor_task(supervisor.client_id, task)
-                    await self.broadcast_supervisors()
-                    logger.info(
-                        f"Assigned queued task {task_id} to supervisor {supervisor.client_id}"
-                    )
+                if await self._try_assign_to_supervisor(task):
+                    pass  # assigned successfully
                 else:
                     worker = await self._registry.claim_idle_worker()
                     if worker:
@@ -1164,12 +1266,7 @@ class NatsService:
         assigned = False
 
         if target == "supervisor":
-            supervisor = await self._registry.claim_idle_supervisor()
-            if supervisor:
-                await self._task_manager.assign_task(task.task_id, supervisor.client_id)
-                await self.publish_supervisor_task(supervisor.client_id, task)
-                await self.broadcast_supervisors()
-                assigned = True
+            assigned = await self._try_assign_to_supervisor(task)
         elif target == "worker":
             if target_worker_id:
                 conn = await self._registry.get_connection(target_worker_id)
@@ -1202,13 +1299,8 @@ class NatsService:
                     await self.broadcast_workers()
                     assigned = True
         else:  # auto — try supervisor first, fall back to worker
-            supervisor = await self._registry.claim_idle_supervisor()
-            if supervisor:
-                await self._task_manager.assign_task(task.task_id, supervisor.client_id)
-                await self.publish_supervisor_task(supervisor.client_id, task)
-                await self.broadcast_supervisors()
-                assigned = True
-            else:
+            assigned = await self._try_assign_to_supervisor(task)
+            if not assigned:
                 worker = await self._registry.claim_idle_worker()
                 if worker:
                     await self._task_manager.assign_task(
@@ -1398,8 +1490,6 @@ class NatsService:
         # Persist to DB
         if self._session_factory:
             try:
-                from figaro.db.repositories.desktop_workers import DesktopWorkerRepository
-
                 async with self._session_factory() as session:
                     repo = DesktopWorkerRepository(session)
                     await repo.upsert(
@@ -1439,8 +1529,6 @@ class NatsService:
         # Remove from DB
         if self._session_factory:
             try:
-                from figaro.db.repositories.desktop_workers import DesktopWorkerRepository
-
                 async with self._session_factory() as session:
                     repo = DesktopWorkerRepository(session)
                     await repo.delete(worker_id)
@@ -1484,8 +1572,6 @@ class NatsService:
         # Persist update to DB
         if self._session_factory:
             try:
-                from figaro.db.repositories.desktop_workers import DesktopWorkerRepository
-
                 async with self._session_factory() as session:
                     repo = DesktopWorkerRepository(session)
                     await repo.update(
@@ -1536,9 +1622,6 @@ class NatsService:
             # 1. Get the task from DB to access scheduled_task_id and source
             if not self._session_factory:
                 return
-
-            from figaro.db.repositories.tasks import TaskRepository
-            from figaro.db.repositories.scheduled import ScheduledTaskRepository
 
             async with self._session_factory() as session:
                 repo = TaskRepository(session)
@@ -1615,16 +1698,13 @@ Keep the core intent of the original prompt intact while making it more actionab
             )
 
             # 7. Assign to an idle supervisor, or queue for later
-            supervisor = await self._registry.claim_idle_supervisor()
-            if not supervisor:
+            if not await self._try_assign_to_supervisor(opt_task):
                 await self._task_manager.queue_task(opt_task.task_id)
                 logger.info(
                     f"Queued optimization task {opt_task.task_id} (no idle supervisor)"
                 )
                 return
 
-            await self._task_manager.assign_task(opt_task.task_id, supervisor.client_id)
-            await self.publish_supervisor_task(supervisor.client_id, opt_task)
             logger.info(
                 f"Created optimization task {opt_task.task_id} for scheduled task {scheduled_task.schedule_id}"
             )
@@ -1643,8 +1723,6 @@ Keep the core intent of the original prompt intact while making it more actionab
         try:
             if not self._session_factory:
                 return
-
-            from figaro.db.repositories.tasks import TaskRepository
 
             async with self._session_factory() as session:
                 repo = TaskRepository(session)
@@ -1763,18 +1841,13 @@ IMPORTANT: Do not simply retry with the exact same prompt. Analyze the failure a
                 )
 
                 # Assign to an idle supervisor, or queue for later
-                supervisor = await self._registry.claim_idle_supervisor()
-                if not supervisor:
+                if not await self._try_assign_to_supervisor(healer_task):
                     await self._task_manager.queue_task(healer_task.task_id)
                     logger.info(
                         f"Queued healer task {healer_task.task_id} (no idle supervisor)"
                     )
                     return
 
-                await self._task_manager.assign_task(
-                    healer_task.task_id, supervisor.client_id
-                )
-                await self.publish_supervisor_task(supervisor.client_id, healer_task)
                 logger.info(
                     f"Created healer task {healer_task.task_id} for failed task {task_id} "
                     f"(retry {retry_number + 1}/{max_retries})"
@@ -1790,8 +1863,6 @@ IMPORTANT: Do not simply retry with the exact same prompt. Analyze the failure a
         if not self._session_factory:
             return
         try:
-            from figaro.db.repositories.workers import WorkerSessionRepository
-
             async with self._session_factory() as session:
                 repo = WorkerSessionRepository(session)
                 await repo.increment_completed(worker_id)
@@ -1804,8 +1875,6 @@ IMPORTANT: Do not simply retry with the exact same prompt. Analyze the failure a
         if not self._session_factory:
             return
         try:
-            from figaro.db.repositories.workers import WorkerSessionRepository
-
             async with self._session_factory() as session:
                 repo = WorkerSessionRepository(session)
                 await repo.increment_failed(worker_id)

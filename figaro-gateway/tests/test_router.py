@@ -1,6 +1,7 @@
 """Tests for NatsRouter."""
 
-from unittest.mock import AsyncMock, PropertyMock, MagicMock
+import asyncio
+from unittest.mock import AsyncMock, PropertyMock, MagicMock, patch
 
 import pytest
 
@@ -205,3 +206,49 @@ class TestNatsRouter:
         await send_handler({"chat_id": "123", "text": "hello"})
         ch.send_message.assert_called_once_with("123", "hello")
         ch.send_photo.assert_not_called()
+
+    async def test_start_creates_registration_loop(self, router, registry, mock_conn):
+        """Test that start() creates a periodic registration task."""
+        ch = _make_mock_channel("telegram")
+        registry.register(ch)
+        await router.start()
+
+        assert router._registration_task is not None
+        assert not router._registration_task.done()
+
+        # Clean up
+        await router.stop()
+
+    async def test_registration_loop_re_publishes(self, router, registry, mock_conn):
+        """Test that the registration loop periodically re-publishes channel registrations."""
+        ch1 = _make_mock_channel("telegram")
+        ch2 = _make_mock_channel("whatsapp")
+        registry.register(ch1)
+        registry.register(ch2)
+
+        # Patch the interval to 0 so the loop fires immediately
+        with patch.object(NatsRouter, "REGISTRATION_INTERVAL", 0):
+            await router.start()
+            # Reset publish counts from start() initial registration
+            mock_conn.publish.reset_mock()
+            # Let the loop fire once
+            await asyncio.sleep(0.05)
+
+        await router.stop()
+
+        published_subjects = [call.args[0] for call in mock_conn.publish.call_args_list]
+        assert "figaro.gateway.telegram.register" in published_subjects
+        assert "figaro.gateway.whatsapp.register" in published_subjects
+
+    async def test_stop_cancels_registration_loop(self, router, registry, mock_conn):
+        """Test that stop() cancels the periodic registration task."""
+        ch = _make_mock_channel("telegram")
+        registry.register(ch)
+        await router.start()
+
+        task = router._registration_task
+        assert task is not None
+        assert not task.done()
+
+        await router.stop()
+        assert task.done()

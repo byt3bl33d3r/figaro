@@ -42,12 +42,9 @@ async def run_gateway() -> None:
     # Wait for shutdown signal
     stop_event = asyncio.Event()
 
-    def _signal_handler() -> None:
-        stop_event.set()
-
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, _signal_handler)
+        loop.add_signal_handler(sig, stop_event.set)
 
     try:
         await stop_event.wait()

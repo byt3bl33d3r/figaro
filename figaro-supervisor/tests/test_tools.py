@@ -461,3 +461,253 @@ async def test_send_screenshot_vnc_error():
 
     # Should NOT have published to gateway
     client.conn.publish.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Scheduled task tool tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_task_sends_all_fields():
+    """create_scheduled_task sends name, start_url, interval_seconds, and
+    enables notify_on_complete, self_learning, self_healing by default."""
+    api_response = {"schedule_id": "sched-1", "name": "Test task"}
+    tools, client = _make_vnc_tools_client(api_response)
+
+    result = await tools["create_scheduled_task"](
+        {
+            "name": "Google search for Jerry Lewis birthday",
+            "prompt": "Go to google.com and search for Jerry Lewis birthday",
+            "start_url": "https://google.com",
+            "interval_seconds": 180,
+        }
+    )
+
+    client.conn.request.assert_awaited_once_with(
+        Subjects.API_SCHEDULED_TASK_CREATE,
+        {
+            "name": "Google search for Jerry Lewis birthday",
+            "prompt": "Go to google.com and search for Jerry Lewis birthday",
+            "start_url": "https://google.com",
+            "interval_seconds": 180,
+            "enabled": True,
+            "parallel_workers": 1,
+            "max_runs": None,
+            "notify_on_complete": True,
+            "self_learning": True,
+            "self_healing": True,
+            "self_learning_max_runs": 4,
+        },
+        timeout=10.0,
+    )
+
+    parsed = json.loads(result["content"][0]["text"])
+    assert parsed["schedule_id"] == "sched-1"
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_task_enabled_override():
+    """create_scheduled_task respects an explicit enabled=False."""
+    tools, client = _make_vnc_tools_client({"schedule_id": "sched-2"})
+
+    await tools["create_scheduled_task"](
+        {
+            "name": "Disabled task",
+            "prompt": "do something",
+            "start_url": "https://example.com",
+            "interval_seconds": 3600,
+            "enabled": False,
+        }
+    )
+
+    payload = client.conn.request.call_args[0][1]
+    assert payload["enabled"] is False
+    assert payload["notify_on_complete"] is True
+    assert payload["self_learning"] is True
+    assert payload["self_healing"] is True
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_task_no_schedule_field():
+    """Regression: create_scheduled_task must NOT send a 'schedule' field.
+    The old tool sent 'schedule' (a cron string) which the handler silently
+    ignored, causing interval_seconds to default to 3600."""
+    tools, client = _make_vnc_tools_client({"schedule_id": "sched-3"})
+
+    await tools["create_scheduled_task"](
+        {
+            "name": "Test",
+            "prompt": "do something",
+            "start_url": "https://example.com",
+            "interval_seconds": 180,
+        }
+    )
+
+    payload = client.conn.request.call_args[0][1]
+    assert "schedule" not in payload
+    assert payload["interval_seconds"] == 180
+
+
+@pytest.mark.asyncio
+async def test_update_scheduled_task_sends_interval_seconds():
+    """update_scheduled_task sends interval_seconds (not 'schedule') to the API."""
+    tools, client = _make_vnc_tools_client({"schedule_id": "sched-4"})
+
+    await tools["update_scheduled_task"](
+        {
+            "id": "sched-4",
+            "interval_seconds": 300,
+        }
+    )
+
+    payload = client.conn.request.call_args[0][1]
+    assert payload["schedule_id"] == "sched-4"
+    assert payload["interval_seconds"] == 300
+    assert "schedule" not in payload
+
+
+@pytest.mark.asyncio
+async def test_update_scheduled_task_sends_name_and_start_url():
+    """update_scheduled_task can update name and start_url."""
+    tools, client = _make_vnc_tools_client({"schedule_id": "sched-5"})
+
+    await tools["update_scheduled_task"](
+        {
+            "id": "sched-5",
+            "name": "Updated name",
+            "start_url": "https://new-url.com",
+        }
+    )
+
+    payload = client.conn.request.call_args[0][1]
+    assert payload["schedule_id"] == "sched-5"
+    assert payload["name"] == "Updated name"
+    assert payload["start_url"] == "https://new-url.com"
+
+
+@pytest.mark.asyncio
+async def test_update_scheduled_task_only_sends_provided_fields():
+    """update_scheduled_task only includes fields that were provided in args."""
+    tools, client = _make_vnc_tools_client({"schedule_id": "sched-6"})
+
+    await tools["update_scheduled_task"](
+        {
+            "id": "sched-6",
+            "prompt": "new prompt",
+        }
+    )
+
+    payload = client.conn.request.call_args[0][1]
+    assert payload == {"schedule_id": "sched-6", "prompt": "new prompt"}
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_task_default_self_learning_max_runs():
+    """create_scheduled_task defaults self_learning_max_runs to 4."""
+    tools, client = _make_vnc_tools_client({"schedule_id": "sched-7"})
+
+    await tools["create_scheduled_task"](
+        {
+            "name": "Test",
+            "prompt": "do something",
+            "start_url": "https://example.com",
+            "interval_seconds": 600,
+        }
+    )
+
+    payload = client.conn.request.call_args[0][1]
+    assert payload["self_learning_max_runs"] == 4
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_task_custom_self_learning_max_runs():
+    """create_scheduled_task respects an explicit self_learning_max_runs value."""
+    tools, client = _make_vnc_tools_client({"schedule_id": "sched-8"})
+
+    await tools["create_scheduled_task"](
+        {
+            "name": "Test",
+            "prompt": "do something",
+            "start_url": "https://example.com",
+            "interval_seconds": 600,
+            "self_learning_max_runs": 10,
+        }
+    )
+
+    payload = client.conn.request.call_args[0][1]
+    assert payload["self_learning_max_runs"] == 10
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_task_default_parallel_workers():
+    """create_scheduled_task defaults parallel_workers to 1."""
+    tools, client = _make_vnc_tools_client({"schedule_id": "sched-9"})
+
+    await tools["create_scheduled_task"](
+        {
+            "name": "Test",
+            "prompt": "do something",
+            "start_url": "https://example.com",
+            "interval_seconds": 600,
+        }
+    )
+
+    payload = client.conn.request.call_args[0][1]
+    assert payload["parallel_workers"] == 1
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_task_custom_parallel_workers():
+    """create_scheduled_task respects an explicit parallel_workers value."""
+    tools, client = _make_vnc_tools_client({"schedule_id": "sched-10"})
+
+    await tools["create_scheduled_task"](
+        {
+            "name": "Test",
+            "prompt": "do something",
+            "start_url": "https://example.com",
+            "interval_seconds": 600,
+            "parallel_workers": 3,
+        }
+    )
+
+    payload = client.conn.request.call_args[0][1]
+    assert payload["parallel_workers"] == 3
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_task_default_max_runs():
+    """create_scheduled_task defaults max_runs to None (unlimited)."""
+    tools, client = _make_vnc_tools_client({"schedule_id": "sched-11"})
+
+    await tools["create_scheduled_task"](
+        {
+            "name": "Test",
+            "prompt": "do something",
+            "start_url": "https://example.com",
+            "interval_seconds": 600,
+        }
+    )
+
+    payload = client.conn.request.call_args[0][1]
+    assert payload["max_runs"] is None
+
+
+@pytest.mark.asyncio
+async def test_create_scheduled_task_custom_max_runs():
+    """create_scheduled_task respects an explicit max_runs value."""
+    tools, client = _make_vnc_tools_client({"schedule_id": "sched-12"})
+
+    await tools["create_scheduled_task"](
+        {
+            "name": "Test",
+            "prompt": "do something",
+            "start_url": "https://example.com",
+            "interval_seconds": 600,
+            "max_runs": 5,
+        }
+    )
+
+    payload = client.conn.request.call_args[0][1]
+    assert payload["max_runs"] == 5

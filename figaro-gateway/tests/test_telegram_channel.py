@@ -40,7 +40,7 @@ class TestTelegramChannel:
     async def test_send_message_with_chat_id(self, channel):
         """Test send_message delegates to bot with int chat_id."""
         await channel.send_message("111", "hello")
-        channel._bot.send_message.assert_called_once_with(111, "hello", parse_mode="Markdown")
+        channel._bot.send_message.assert_called_once_with(111, "hello")
 
     async def test_send_message_empty_chat_id_uses_first_allowed(self, channel):
         """Test send_message with empty chat_id uses first allowed chat."""
@@ -50,10 +50,10 @@ class TestTelegramChannel:
         assert call_args[0][0] in {111, 222}
         assert call_args[0][1] == "hello"
 
-    async def test_send_message_custom_parse_mode(self, channel):
-        """Test send_message passes parse_mode kwarg."""
+    async def test_send_message_ignores_extra_kwargs(self, channel):
+        """Test send_message ignores extra kwargs (parse_mode no longer used)."""
         await channel.send_message("111", "hello", parse_mode="HTML")
-        channel._bot.send_message.assert_called_once_with(111, "hello", parse_mode="HTML")
+        channel._bot.send_message.assert_called_once_with(111, "hello")
 
     async def test_ask_question_delegates_to_bot(self, channel):
         """Test ask_question delegates to bot."""

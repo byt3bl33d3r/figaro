@@ -99,6 +99,7 @@ class TestSupervisorNatsClientConnect:
         mock_conn = MagicMock()
         mock_conn.connect = AsyncMock()
         mock_conn.subscribe = AsyncMock(return_value=MagicMock())
+        mock_conn.subscribe_request = AsyncMock(return_value=MagicMock())
         mock_conn.js_subscribe = AsyncMock(return_value=MagicMock())
         mock_conn.request = AsyncMock(return_value={"status": "ok"})
         mock_conn.is_connected = True

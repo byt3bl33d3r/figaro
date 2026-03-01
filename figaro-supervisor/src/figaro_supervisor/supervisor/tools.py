@@ -50,7 +50,7 @@ async def _wait_for_delegation(
     Returns:
         MCP tool content dict with the result
     """
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
 
     completion_event = asyncio.Event()
     worker_result: dict[str, Any] = {}
@@ -297,24 +297,44 @@ def create_tools_server(
 
     @tool(
         "create_scheduled_task",
-        "Create a new scheduled task.",
+        "Create a new scheduled task. Extracts a short name, the starting URL, and interval from the user request.",
         {
             "type": "object",
             "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Short descriptive name for the task (e.g. 'Google search for Jerry Lewis birthday')",
+                },
                 "prompt": {
                     "type": "string",
                     "description": "Task prompt to execute on schedule",
                 },
-                "schedule": {
+                "start_url": {
                     "type": "string",
-                    "description": "Cron expression for scheduling",
+                    "description": "URL to navigate to before executing the task (e.g. 'https://google.com')",
+                },
+                "interval_seconds": {
+                    "type": "integer",
+                    "description": "How often to run the task, in seconds (e.g. 180 for every 3 minutes, 3600 for every hour)",
                 },
                 "enabled": {
                     "type": "boolean",
-                    "description": "Whether the task is enabled",
+                    "description": "Whether the task is enabled (default: true)",
+                },
+                "parallel_workers": {
+                    "type": "integer",
+                    "description": "Number of workers to run in parallel (default: 1)",
+                },
+                "max_runs": {
+                    "type": "integer",
+                    "description": "Max total runs before the task auto-disables (default: unlimited)",
+                },
+                "self_learning_max_runs": {
+                    "type": "integer",
+                    "description": "Max self-learning optimization runs (default: 4)",
                 },
             },
-            "required": ["prompt", "schedule"],
+            "required": ["name", "prompt", "start_url", "interval_seconds"],
         },
     )
     async def create_scheduled_task(args: dict[str, Any]) -> dict[str, Any]:
@@ -322,22 +342,35 @@ def create_tools_server(
             await _request(
                 Subjects.API_SCHEDULED_TASK_CREATE,
                 {
+                    "name": args["name"],
                     "prompt": args["prompt"],
-                    "schedule": args["schedule"],
+                    "start_url": args["start_url"],
+                    "interval_seconds": args["interval_seconds"],
                     "enabled": args.get("enabled", True),
+                    "parallel_workers": args.get("parallel_workers", 1),
+                    "max_runs": args.get("max_runs"),
+                    "notify_on_complete": True,
+                    "self_learning": True,
+                    "self_healing": True,
+                    "self_learning_max_runs": args.get("self_learning_max_runs", 4),
                 },
             )
         )
 
     @tool(
         "update_scheduled_task",
-        "Update a scheduled task.",
+        "Update a scheduled task. Only include fields that should change.",
         {
             "type": "object",
             "properties": {
                 "id": {"type": "string", "description": "Scheduled task ID"},
+                "name": {"type": "string", "description": "New name"},
                 "prompt": {"type": "string", "description": "New prompt"},
-                "schedule": {"type": "string", "description": "New schedule"},
+                "start_url": {"type": "string", "description": "New starting URL"},
+                "interval_seconds": {
+                    "type": "integer",
+                    "description": "New interval in seconds",
+                },
                 "enabled": {"type": "boolean", "description": "New enabled state"},
             },
             "required": ["id"],
@@ -345,12 +378,9 @@ def create_tools_server(
     )
     async def update_scheduled_task(args: dict[str, Any]) -> dict[str, Any]:
         data: dict[str, Any] = {"schedule_id": args["id"]}
-        if "prompt" in args:
-            data["prompt"] = args["prompt"]
-        if "schedule" in args:
-            data["schedule"] = args["schedule"]
-        if "enabled" in args:
-            data["enabled"] = args["enabled"]
+        for key in ("name", "prompt", "start_url", "interval_seconds", "enabled"):
+            if key in args:
+                data[key] = args[key]
         return _result(
             await _request(
                 Subjects.API_SCHEDULED_TASK_UPDATE,

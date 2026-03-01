@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 
 from nats.js import JetStreamContext
@@ -42,8 +43,6 @@ async def _ensure_stream(
 
 async def ensure_streams(js: JetStreamContext) -> None:
     """Create or update JetStream streams required by Figaro."""
-    import asyncio
-
     await asyncio.gather(
         _ensure_stream(js, TASKS_STREAM, TASKS_SUBJECTS, TASKS_MAX_AGE),
         _ensure_stream(js, HELP_STREAM, HELP_SUBJECTS, HELP_MAX_AGE),

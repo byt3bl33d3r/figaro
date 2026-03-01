@@ -2,6 +2,7 @@
 
 import asyncio
 import dataclasses
+import functools
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
@@ -314,16 +315,6 @@ Analyze this request and either:
                 session.prompt, session.options, source_metadata=session.source_metadata
             )
 
-            # Build session-aware can_use_tool callback
-            async def can_use_tool(
-                tool_name: str,
-                input_data: dict[str, Any],
-                context: ToolPermissionContext,
-            ) -> PermissionResultAllow | PermissionResultDeny:
-                return await self._can_use_tool_for_session(
-                    session, tool_name, input_data, context
-                )
-
             # Create a fresh MCP server per session to avoid lifecycle
             # issues when ClaudeSDKClient cleanup corrupts shared state
             tools_server = create_tools_server(
@@ -341,7 +332,7 @@ Analyze this request and either:
                 mcp_servers={"orchestrator": tools_server},
                 # can_use_tool handles AskUserQuestion routing to humans
                 # via NATS and auto-approves all other tools.
-                can_use_tool=can_use_tool,
+                can_use_tool=functools.partial(self._can_use_tool_for_session, session),
                 # Hooks for logging/audit (NOT AskUserQuestion — that's via can_use_tool).
                 # The keepalive hook is required to keep the stream open for can_use_tool.
                 hooks={

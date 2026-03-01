@@ -267,7 +267,7 @@ describe('ScheduleFormModal - self-healing', () => {
     });
   });
 
-  it('sends null self_learning_max_runs when field is empty', async () => {
+  it('sends null self_learning_max_runs when field is cleared', async () => {
     const createdTask = createMockScheduledTask({ self_learning: true });
     mockCreateScheduledTask.mockResolvedValueOnce(createdTask);
 
@@ -282,13 +282,44 @@ describe('ScheduleFormModal - self-healing', () => {
     });
     await fillPrompt('Do something');
 
-    // Don't set max learning runs (leave empty = unlimited)
+    // Clear the max learning runs field (default is 4, clear to get unlimited)
+    const unlimitedInputs = screen.getAllByPlaceholderText('Unlimited');
+    const maxLearningRunsInput = unlimitedInputs[unlimitedInputs.length - 1];
+    fireEvent.change(maxLearningRunsInput, { target: { value: '' } });
+
     fireEvent.click(screen.getByText('Create Schedule'));
 
     await waitFor(() => {
       expect(mockCreateScheduledTask).toHaveBeenCalledWith(
         expect.objectContaining({
           self_learning_max_runs: null,
+        })
+      );
+    });
+  });
+
+  it('sends default self_learning_max_runs of 4 for new tasks', async () => {
+    const createdTask = createMockScheduledTask({ self_learning: true, self_learning_max_runs: 4 });
+    mockCreateScheduledTask.mockResolvedValueOnce(createdTask);
+
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    // Fill required fields
+    fireEvent.change(screen.getByPlaceholderText('e.g., Daily price check'), {
+      target: { value: 'Test Task' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('https://example.com'), {
+      target: { value: 'https://example.com' },
+    });
+    await fillPrompt('Do something');
+
+    // Don't change max learning runs (should default to 4)
+    fireEvent.click(screen.getByText('Create Schedule'));
+
+    await waitFor(() => {
+      expect(mockCreateScheduledTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          self_learning_max_runs: 4,
         })
       );
     });
