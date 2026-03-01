@@ -124,8 +124,10 @@ export function ScheduledTasksList() {
               <div className="font-medium text-sm text-cctv-text truncate">{task.name}</div>
               <div className="text-xs text-cctv-text-dim truncate mt-0.5">{task.start_url}</div>
               <div className="text-xs text-cctv-text-dim mt-1">
-                Every {formatInterval(task.interval_seconds)} | Next:{' '}
-                {task.enabled ? formatNextRun(task.next_run_at) : 'Paused'}
+                {task.interval_seconds === 0 && task.run_at
+                  ? `Once at ${new Date(task.run_at).toLocaleString()}`
+                  : `Every ${formatInterval(task.interval_seconds)}`}
+                {' '}| Next: {task.enabled ? formatNextRun(task.next_run_at) : 'Paused'}
               </div>
               {(task.run_count > 0 || task.max_runs !== null) && (
                 <div className="text-xs text-cctv-accent mt-0.5">

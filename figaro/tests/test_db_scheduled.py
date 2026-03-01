@@ -479,3 +479,114 @@ class TestScheduledTaskRepository:
         from uuid import uuid4
         result = await repo.increment_learning_count(str(uuid4()))
         assert result is None
+
+    async def test_create_with_run_at(self, repo, db_session):
+        """Test creating a scheduled task with run_at uses it as next_run_at."""
+        future_time = datetime.now(timezone.utc) + timedelta(hours=24)
+        task = await repo.create(
+            name="Deferred Task",
+            prompt="Do later",
+            start_url="https://example.com",
+            interval_seconds=3600,
+            run_at=future_time,
+        )
+        await db_session.commit()
+
+        assert task.run_at == future_time
+        assert task.next_run_at == future_time
+
+    async def test_one_time_execution_auto_disables(self, repo, db_session):
+        """Test that interval_seconds=0 auto-disables after mark_executed."""
+        future_time = datetime.now(timezone.utc) + timedelta(hours=1)
+        task = await repo.create(
+            name="One-Time Task",
+            prompt="Run once",
+            start_url="https://example.com",
+            interval_seconds=0,
+            run_at=future_time,
+        )
+        await db_session.commit()
+
+        assert task.enabled is True
+        assert task.next_run_at == future_time
+
+        # Execute it
+        executed = await repo.mark_executed(task.schedule_id)
+        await db_session.commit()
+
+        assert executed.run_count == 1
+        assert executed.enabled is False
+        assert executed.next_run_at is None
+
+    async def test_recurring_with_run_at_deferred_start(self, repo, db_session):
+        """Test recurring task with run_at uses run_at initially, then interval after execution."""
+        future_time = datetime.now(timezone.utc) + timedelta(hours=24)
+        task = await repo.create(
+            name="Deferred Recurring",
+            prompt="Do periodically",
+            start_url="https://example.com",
+            interval_seconds=3600,
+            run_at=future_time,
+        )
+        await db_session.commit()
+
+        # Initial next_run_at should be run_at
+        assert task.next_run_at == future_time
+
+        # After execution, next_run_at should use interval
+        executed = await repo.mark_executed(task.schedule_id)
+        await db_session.commit()
+
+        assert executed.run_count == 1
+        assert executed.enabled is True
+        assert executed.next_run_at is not None
+        # next_run_at should now be based on now + interval, not run_at
+        assert executed.next_run_at != future_time
+        # It should be roughly now + 3600 seconds
+        expected_next = datetime.now(timezone.utc) + timedelta(seconds=3600)
+        assert abs((executed.next_run_at - expected_next).total_seconds()) < 5
+
+    async def test_toggle_enabled_with_run_at_future(self, repo, db_session):
+        """Test that toggling re-enable uses run_at if in the future and never run."""
+        future_time = datetime.now(timezone.utc) + timedelta(hours=24)
+        task = await repo.create(
+            name="Deferred Task",
+            prompt="Do later",
+            start_url="https://example.com",
+            interval_seconds=3600,
+            run_at=future_time,
+        )
+        await db_session.commit()
+
+        # Disable
+        toggled = await repo.toggle_enabled(task.schedule_id)
+        await db_session.commit()
+        assert toggled.enabled is False
+
+        # Re-enable: should use run_at since it's in the future and last_run_at is None
+        toggled = await repo.toggle_enabled(task.schedule_id)
+        await db_session.commit()
+        assert toggled.enabled is True
+        assert toggled.next_run_at == future_time
+
+    async def test_toggle_enabled_one_time_already_run(self, repo, db_session):
+        """Test that re-enabling a one-time task that already ran stays disabled."""
+        future_time = datetime.now(timezone.utc) + timedelta(hours=1)
+        task = await repo.create(
+            name="One-Time Task",
+            prompt="Run once",
+            start_url="https://example.com",
+            interval_seconds=0,
+            run_at=future_time,
+        )
+        await db_session.commit()
+
+        # Execute it (auto-disables)
+        await repo.mark_executed(task.schedule_id)
+        await db_session.commit()
+
+        # Try to re-enable: should stay disabled because it's one-time and already ran
+        toggled = await repo.toggle_enabled(task.schedule_id)
+        await db_session.commit()
+        assert toggled.enabled is False
+        assert toggled.next_run_at is None

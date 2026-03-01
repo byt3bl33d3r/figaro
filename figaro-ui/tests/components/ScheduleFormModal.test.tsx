@@ -33,6 +33,7 @@ const createMockScheduledTask = (overrides: Partial<ScheduledTask> = {}): Schedu
   created_at: '2024-01-01T00:00:00Z',
   last_run_at: null,
   next_run_at: '2024-01-01T01:00:00Z',
+  run_at: null,
   run_count: 0,
   options: {},
   parallel_workers: 1,
@@ -333,5 +334,262 @@ describe('ScheduleFormModal - self-healing', () => {
     const unlimitedInputs = screen.getAllByPlaceholderText('Unlimited');
     const maxLearningRunsInput = unlimitedInputs[unlimitedInputs.length - 1] as HTMLInputElement;
     expect(maxLearningRunsInput.value).toBe('10');
+  });
+});
+
+describe('ScheduleFormModal - run_at', () => {
+  const mockOnClose = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('renders the run_at field in the form', () => {
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    expect(screen.getByText('Run At (optional)')).toBeInTheDocument();
+    expect(screen.getByText('Leave empty to start immediately')).toBeInTheDocument();
+  });
+
+  it('run_at is included in the create payload when set', async () => {
+    const createdTask = createMockScheduledTask({ run_at: '2024-06-15T10:00:00.000Z' });
+    mockCreateScheduledTask.mockResolvedValueOnce(createdTask);
+
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    // Fill required fields
+    fireEvent.change(screen.getByPlaceholderText('e.g., Daily price check'), {
+      target: { value: 'Test Task' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('https://example.com'), {
+      target: { value: 'https://example.com' },
+    });
+    await fillPrompt('Do something');
+
+    // Set run_at via the datetime-local input
+    const runAtInput = screen.getByLabelText('Run At (optional)');
+    fireEvent.change(runAtInput, { target: { value: '2024-06-15T10:00' } });
+
+    // Submit
+    fireEvent.click(screen.getByText('Create Schedule'));
+
+    await waitFor(() => {
+      expect(mockCreateScheduledTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          run_at: expect.any(String),
+        })
+      );
+      // Verify run_at is a non-null ISO string
+      const callArgs = mockCreateScheduledTask.mock.calls[0][0];
+      expect(callArgs.run_at).not.toBeNull();
+    });
+  });
+
+  it('run_at is null in the create payload when not set', async () => {
+    const createdTask = createMockScheduledTask();
+    mockCreateScheduledTask.mockResolvedValueOnce(createdTask);
+
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    // Fill required fields
+    fireEvent.change(screen.getByPlaceholderText('e.g., Daily price check'), {
+      target: { value: 'Test Task' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('https://example.com'), {
+      target: { value: 'https://example.com' },
+    });
+    await fillPrompt('Do something');
+
+    // Do NOT set run_at
+
+    // Submit
+    fireEvent.click(screen.getByText('Create Schedule'));
+
+    await waitFor(() => {
+      expect(mockCreateScheduledTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          run_at: null,
+        })
+      );
+    });
+  });
+
+  it('one-time task: run_at set with interval 0', async () => {
+    const createdTask = createMockScheduledTask({ run_at: '2024-06-15T10:00:00.000Z', interval_seconds: 0 });
+    mockCreateScheduledTask.mockResolvedValueOnce(createdTask);
+
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    // Fill required fields
+    fireEvent.change(screen.getByPlaceholderText('e.g., Daily price check'), {
+      target: { value: 'One-Time Task' },
+    });
+    fireEvent.change(screen.getByPlaceholderText('https://example.com'), {
+      target: { value: 'https://example.com' },
+    });
+    await fillPrompt('Do something once');
+
+    // Set run_at
+    const runAtInput = screen.getByLabelText('Run At (optional)');
+    fireEvent.change(runAtInput, { target: { value: '2024-06-15T10:00' } });
+
+    // Set interval to 0 for one-time
+    const intervalInput = screen.getByDisplayValue('60');
+    fireEvent.change(intervalInput, { target: { value: '0' } });
+
+    // Submit
+    fireEvent.click(screen.getByText('Create Schedule'));
+
+    await waitFor(() => {
+      expect(mockCreateScheduledTask).toHaveBeenCalledWith(
+        expect.objectContaining({
+          run_at: expect.any(String),
+          interval_seconds: 0,
+        })
+      );
+    });
+  });
+
+  it('pre-populates run_at when editing a task with run_at set', () => {
+    const editTask = createMockScheduledTask({ run_at: '2024-06-15T10:00:00.000Z' });
+
+    render(<ScheduleFormModal onClose={mockOnClose} editTask={editTask} />);
+
+    const runAtInput = screen.getByLabelText('Run At (optional)') as HTMLInputElement;
+    expect(runAtInput.value).not.toBe('');
+  });
+
+  it('run_at field is empty when editing a task without run_at', () => {
+    const editTask = createMockScheduledTask({ run_at: null });
+
+    render(<ScheduleFormModal onClose={mockOnClose} editTask={editTask} />);
+
+    const runAtInput = screen.getByLabelText('Run At (optional)') as HTMLInputElement;
+    expect(runAtInput.value).toBe('');
+  });
+
+  it('shows one-time help text when run_at is set and interval is 0', () => {
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    // Set run_at
+    const runAtInput = screen.getByLabelText('Run At (optional)');
+    fireEvent.change(runAtInput, { target: { value: '2024-06-15T10:00' } });
+
+    // Set interval to 0
+    const intervalInput = screen.getByDisplayValue('60');
+    fireEvent.change(intervalInput, { target: { value: '0' } });
+
+    expect(screen.getByText('One-time task at the specified date/time')).toBeInTheDocument();
+  });
+
+  it('shows deferred recurring help text when run_at is set and interval > 0', () => {
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    // Set run_at
+    const runAtInput = screen.getByLabelText('Run At (optional)');
+    fireEvent.change(runAtInput, { target: { value: '2024-06-15T10:00' } });
+
+    // Keep interval > 0 (default is 60)
+    expect(screen.getByText('Recurring task starting at the specified date/time')).toBeInTheDocument();
+  });
+
+  it('changes interval label when run_at is set', () => {
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    // Initially the label should be "Run Every"
+    expect(screen.getByText('Run Every')).toBeInTheDocument();
+
+    // Set run_at
+    const runAtInput = screen.getByLabelText('Run At (optional)');
+    fireEvent.change(runAtInput, { target: { value: '2024-06-15T10:00' } });
+
+    // Now the label should change
+    expect(screen.getByText('Repeat Every (0 = one-time)')).toBeInTheDocument();
+  });
+});
+
+describe('ScheduleFormModal - schedule explainer', () => {
+  const mockOnClose = vi.fn();
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('shows recurring schedule explanation by default', () => {
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    const explainer = screen.getByTestId('schedule-explainer');
+    expect(explainer.textContent).toContain('Runs immediately');
+    expect(explainer.textContent).toContain('every 60 minutes');
+  });
+
+  it('updates explanation when interval changes', () => {
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    // Change interval to 2 hours
+    const intervalInput = screen.getByDisplayValue('60');
+    fireEvent.change(intervalInput, { target: { value: '2' } });
+    const unitSelect = screen.getByDisplayValue('Minutes');
+    fireEvent.change(unitSelect, { target: { value: 'hours' } });
+
+    const explainer = screen.getByTestId('schedule-explainer');
+    expect(explainer.textContent).toContain('every 2 hours');
+  });
+
+  it('shows one-time explanation when run_at is set and interval is 0', () => {
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    const runAtInput = screen.getByLabelText('Run At (optional)');
+    fireEvent.change(runAtInput, { target: { value: '2024-06-15T10:00' } });
+
+    const intervalInput = screen.getByDisplayValue('60');
+    fireEvent.change(intervalInput, { target: { value: '0' } });
+
+    const explainer = screen.getByTestId('schedule-explainer');
+    expect(explainer.textContent).toContain('Runs once on');
+  });
+
+  it('shows deferred recurring explanation when run_at is set with interval', () => {
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    const runAtInput = screen.getByLabelText('Run At (optional)');
+    fireEvent.change(runAtInput, { target: { value: '2024-06-15T10:00' } });
+
+    const explainer = screen.getByTestId('schedule-explainer');
+    expect(explainer.textContent).toContain('First run on');
+    expect(explainer.textContent).toContain('then every 60 minutes');
+  });
+
+  it('shows max runs in explanation when set', () => {
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    const maxRunsInput = screen.getAllByPlaceholderText('Unlimited')[0];
+    fireEvent.change(maxRunsInput, { target: { value: '5' } });
+
+    const explainer = screen.getByTestId('schedule-explainer');
+    expect(explainer.textContent).toContain('stop after 5 runs');
+  });
+
+  it('shows singular unit for interval of 1', () => {
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    const intervalInput = screen.getByDisplayValue('60');
+    fireEvent.change(intervalInput, { target: { value: '1' } });
+    const unitSelect = screen.getByDisplayValue('Minutes');
+    fireEvent.change(unitSelect, { target: { value: 'hours' } });
+
+    const explainer = screen.getByTestId('schedule-explainer');
+    expect(explainer.textContent).toContain('every hour');
+  });
+
+  it('shows fallback message when no schedule is configured', () => {
+    render(<ScheduleFormModal onClose={mockOnClose} />);
+
+    // Set interval to 0 without run_at
+    const intervalInput = screen.getByDisplayValue('60');
+    fireEvent.change(intervalInput, { target: { value: '0' } });
+
+    const explainer = screen.getByTestId('schedule-explainer');
+    expect(explainer.textContent).toContain('Set an interval or a specific date/time');
   });
 });

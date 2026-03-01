@@ -29,6 +29,7 @@ class ScheduledTaskRepository:
         self_healing: bool = False,
         self_learning_max_runs: int | None = None,
         schedule_id: str | None = None,
+        run_at: datetime | None = None,
     ) -> ScheduledTaskModel:
         """Create a new scheduled task.
 
@@ -44,11 +45,13 @@ class ScheduledTaskRepository:
             self_learning: Whether to enable self-learning mode
             self_healing: Whether to enable self-healing mode
             schedule_id: Optional specific schedule ID
+            run_at: Optional deferred start time (used as initial next_run_at)
 
         Returns:
             The created ScheduledTaskModel
         """
         now = datetime.now(timezone.utc)
+        next_run = run_at if run_at else now + timedelta(seconds=interval_seconds)
         model = ScheduledTaskModel(
             name=name,
             prompt=prompt,
@@ -61,7 +64,8 @@ class ScheduledTaskRepository:
             self_learning=self_learning,
             self_healing=self_healing,
             self_learning_max_runs=self_learning_max_runs,
-            next_run_at=now + timedelta(seconds=interval_seconds),
+            next_run_at=next_run,
+            run_at=run_at,
         )
         if schedule_id:
             model.schedule_id = schedule_id
@@ -181,7 +185,19 @@ class ScheduledTaskRepository:
         # If enabling, calculate next_run_at
         next_run = None
         if new_enabled:
-            next_run = now + timedelta(seconds=task.interval_seconds)
+            # One-time task (interval_seconds==0) that already ran cannot be re-enabled
+            if task.interval_seconds == 0 and task.last_run_at is not None:
+                new_enabled = False
+                next_run = None
+            elif (
+                task.run_at
+                and task.run_at > now
+                and task.last_run_at is None
+            ):
+                # Use run_at as next_run_at if it's in the future and task hasn't run yet
+                next_run = task.run_at
+            else:
+                next_run = now + timedelta(seconds=task.interval_seconds)
 
         result = await self.session.execute(
             update(ScheduledTaskModel)
@@ -215,7 +231,10 @@ class ScheduledTaskRepository:
         new_run_count = task.run_count + 1
 
         # Check if we should auto-disable
-        should_disable = task.max_runs is not None and new_run_count >= task.max_runs
+        should_disable = (
+            (task.max_runs is not None and new_run_count >= task.max_runs)
+            or task.interval_seconds == 0
+        )
 
         result = await self.session.execute(
             update(ScheduledTaskModel)

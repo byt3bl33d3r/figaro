@@ -1228,3 +1228,127 @@ class TestNotifyOnComplete:
         assert tasks[0].notify_on_complete is True  # Migrated from notification_url
 
         await scheduler.stop()
+
+
+class TestRunAt:
+    """Tests for run_at (deferred start / one-time execution) functionality."""
+
+    @pytest.mark.asyncio
+    async def test_create_with_run_at(self, scheduler):
+        """Test creating a scheduled task with run_at parameter."""
+        future_time = datetime.now(timezone.utc) + timedelta(hours=24)
+        task = await scheduler.create_scheduled_task(
+            name="Deferred Task",
+            prompt="Test prompt",
+            start_url="https://example.com",
+            interval_seconds=3600,
+            run_at=future_time,
+        )
+
+        assert task.run_at == future_time
+        assert task.next_run_at == future_time
+
+    @pytest.mark.asyncio
+    async def test_create_without_run_at_uses_interval(self, scheduler):
+        """Test that creating without run_at uses interval for next_run_at."""
+        before = datetime.now(timezone.utc)
+        task = await scheduler.create_scheduled_task(
+            name="Normal Task",
+            prompt="Test prompt",
+            start_url="https://example.com",
+            interval_seconds=3600,
+        )
+        after = datetime.now(timezone.utc)
+
+        assert task.run_at is None
+        assert task.next_run_at is not None
+        expected_earliest = before + timedelta(seconds=3600)
+        expected_latest = after + timedelta(seconds=3600)
+        assert expected_earliest <= task.next_run_at <= expected_latest
+
+    @pytest.mark.asyncio
+    async def test_one_time_execution_auto_disables(
+        self, scheduler, registry, mock_nats_service
+    ):
+        """Test that interval_seconds=0 auto-disables after execution."""
+        future_time = datetime.now(timezone.utc) + timedelta(hours=1)
+        scheduled_task = await scheduler.create_scheduled_task(
+            name="One-Time Task",
+            prompt="Run once",
+            start_url="https://example.com",
+            interval_seconds=0,
+            run_at=future_time,
+        )
+
+        assert scheduled_task.enabled is True
+        assert scheduled_task.next_run_at == future_time
+
+        mock_worker = MagicMock(client_id="worker-1")
+
+        with patch.object(
+            registry, "claim_idle_worker", new_callable=AsyncMock
+        ) as mock_claim:
+            mock_claim.return_value = mock_worker
+            await scheduler._execute_scheduled_task(scheduled_task)
+
+        task = await scheduler.get_scheduled_task(scheduled_task.schedule_id)
+        assert task.run_count == 1
+        assert task.enabled is False
+        assert task.next_run_at is None
+
+    @pytest.mark.asyncio
+    async def test_run_at_persistence(
+        self, task_manager, registry, temp_storage_path, mock_nats_service
+    ):
+        """Test that run_at is saved and loaded correctly."""
+        scheduler1 = SchedulerService(
+            task_manager=task_manager,
+            registry=registry,
+            storage_path=temp_storage_path,
+        )
+        scheduler1.set_nats_service(mock_nats_service)
+        await scheduler1.start()
+
+        future_time = datetime.now(timezone.utc) + timedelta(hours=24)
+        await scheduler1.create_scheduled_task(
+            name="Deferred Task",
+            prompt="Test prompt",
+            start_url="https://example.com",
+            interval_seconds=3600,
+            run_at=future_time,
+        )
+        await scheduler1.stop()
+
+        # Load in new scheduler
+        scheduler2 = SchedulerService(
+            task_manager=task_manager,
+            registry=registry,
+            storage_path=temp_storage_path,
+        )
+        scheduler2.set_nats_service(mock_nats_service)
+        await scheduler2.start()
+
+        tasks = await scheduler2.get_all_scheduled_tasks()
+        assert len(tasks) == 1
+        assert tasks[0].run_at is not None
+        # Compare timestamps (allow small rounding from ISO serialization)
+        assert abs((tasks[0].run_at - future_time).total_seconds()) < 1
+
+        await scheduler2.stop()
+
+    @pytest.mark.asyncio
+    async def test_run_at_in_storage_format(self, scheduler, temp_storage_path):
+        """Test that run_at is included in storage JSON."""
+        future_time = datetime.now(timezone.utc) + timedelta(hours=24)
+        await scheduler.create_scheduled_task(
+            name="Test Task",
+            prompt="Test prompt",
+            start_url="https://example.com",
+            interval_seconds=3600,
+            run_at=future_time,
+        )
+
+        data = json.loads(temp_storage_path.read_text())
+        assert len(data) == 1
+        assert data[0]["run_at"] is not None
+        assert datetime.fromisoformat(data[0]["run_at"]) == future_time

@@ -3,10 +3,9 @@ FROM mcr.microsoft.com/devcontainers/python:2-3.14-trixie
 RUN rm -f /etc/apt/sources.list.d/yarn.list \
     && rm -f /usr/share/keyrings/yarn.gpg
 
-# RUN apt-get update && apt-get install --no-install-recommends -y \
-#     chromium \
-#     chromium-driver \
-#     && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install --no-install-recommends -y \
+    shellcheck \
+    && rm -rf /var/lib/apt/lists/*
 
 # # Force-install extension via policy
 # RUN mkdir -p /etc/chromium/policies/managed

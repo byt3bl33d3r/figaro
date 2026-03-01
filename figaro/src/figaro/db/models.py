@@ -159,6 +159,9 @@ class ScheduledTaskModel(Base):
     self_healing: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     self_learning_max_runs: Mapped[int | None] = mapped_column(Integer, nullable=True)
     self_learning_run_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),

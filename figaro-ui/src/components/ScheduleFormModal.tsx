@@ -12,6 +12,9 @@ interface Props {
 }
 
 function parseInterval(seconds: number): { value: string; unit: IntervalUnit } {
+  if (seconds === 0) {
+    return { value: '0', unit: 'minutes' };
+  }
   if (seconds >= 604800 && seconds % 604800 === 0) {
     return { value: String(seconds / 604800), unit: 'weeks' };
   }
@@ -22,6 +25,68 @@ function parseInterval(seconds: number): { value: string; unit: IntervalUnit } {
     return { value: String(seconds / 3600), unit: 'hours' };
   }
   return { value: String(seconds / 60), unit: 'minutes' };
+}
+
+function formatScheduleExplainer(
+  runAt: string,
+  intervalValue: string,
+  intervalUnit: IntervalUnit,
+  maxRuns: string
+): string {
+  const interval = parseInt(intervalValue) || 0;
+  const hasRunAt = runAt !== '';
+  const runs = maxRuns ? parseInt(maxRuns) : null;
+
+  const formatRunAt = (val: string) => {
+    const d = new Date(val);
+    return d.toLocaleString(undefined, {
+      weekday: 'short',
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+  };
+
+  const pluralize = (n: number, unit: string) => {
+    if (n === 1) {
+      const singular: Record<string, string> = {
+        minutes: 'minute',
+        hours: 'hour',
+        days: 'day',
+        weeks: 'week',
+      };
+      return singular[unit] || unit;
+    }
+    return `${n} ${unit}`;
+  };
+
+  const runsSuffix = runs ? `, then stop after ${runs} run${runs === 1 ? '' : 's'}` : '';
+
+  if (hasRunAt && interval === 0) {
+    return `Runs once on ${formatRunAt(runAt)}`;
+  }
+
+  if (hasRunAt && interval > 0) {
+    return `First run on ${formatRunAt(runAt)}, then every ${pluralize(interval, intervalUnit)}${runsSuffix}`;
+  }
+
+  if (interval > 0) {
+    return `Runs immediately, then every ${pluralize(interval, intervalUnit)}${runsSuffix}`;
+  }
+
+  return 'Set an interval or a specific date/time to schedule this task';
+}
+
+function isoToDatetimeLocal(iso: string): string {
+  const date = new Date(iso);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function datetimeLocalToIso(local: string): string {
+  return new Date(local).toISOString();
 }
 
 export function ScheduleFormModal({ onClose, editTask }: Props) {
@@ -38,6 +103,7 @@ export function ScheduleFormModal({ onClose, editTask }: Props) {
   const [selfLearning, setSelfLearning] = useState(editTask?.self_learning ?? true);
   const [selfHealing, setSelfHealing] = useState(editTask?.self_healing ?? true);
   const [selfLearningMaxRuns, setSelfLearningMaxRuns] = useState(editTask?.self_learning_max_runs?.toString() ?? '4');
+  const [runAt, setRunAt] = useState(editTask?.run_at ? isoToDatetimeLocal(editTask.run_at) : '');
   const [promptEditorOpen, setPromptEditorOpen] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -46,7 +112,8 @@ export function ScheduleFormModal({ onClose, editTask }: Props) {
   const updateTask = useScheduledTasksStore((state) => state.updateTask);
 
   const getIntervalSeconds = useCallback(() => {
-    const value = parseInt(intervalValue) || 1;
+    const value = parseInt(intervalValue) || 0;
+    if (value === 0) return 0;
     switch (intervalUnit) {
       case 'minutes':
         return value * 60;
@@ -71,6 +138,8 @@ export function ScheduleFormModal({ onClose, editTask }: Props) {
       const parsedMaxRuns = maxRuns ? parseInt(maxRuns) : null;
       const parsedSelfLearningMaxRuns = selfLearningMaxRuns ? parseInt(selfLearningMaxRuns) : null;
 
+      const parsedRunAt = runAt ? datetimeLocalToIso(runAt) : null;
+
       try {
         if (editTask) {
           // Update existing task
@@ -79,6 +148,7 @@ export function ScheduleFormModal({ onClose, editTask }: Props) {
             prompt,
             start_url: startUrl,
             interval_seconds: getIntervalSeconds(),
+            run_at: parsedRunAt,
             parallel_workers: parsedParallelWorkers,
             max_runs: parsedMaxRuns,
             notify_on_complete: notifyOnComplete,
@@ -94,6 +164,7 @@ export function ScheduleFormModal({ onClose, editTask }: Props) {
             prompt,
             start_url: startUrl,
             interval_seconds: getIntervalSeconds(),
+            run_at: parsedRunAt,
             parallel_workers: parsedParallelWorkers,
             max_runs: parsedMaxRuns,
             notify_on_complete: notifyOnComplete,
@@ -110,7 +181,7 @@ export function ScheduleFormModal({ onClose, editTask }: Props) {
         setIsSubmitting(false);
       }
     },
-    [name, startUrl, prompt, getIntervalSeconds, parallelWorkers, maxRuns, notifyOnComplete, selfLearning, selfHealing, selfLearningMaxRuns, addTask, updateTask, onClose, editTask]
+    [name, startUrl, prompt, getIntervalSeconds, runAt, parallelWorkers, maxRuns, notifyOnComplete, selfLearning, selfHealing, selfLearningMaxRuns, addTask, updateTask, onClose, editTask]
   );
 
   return (
@@ -255,13 +326,34 @@ export function ScheduleFormModal({ onClose, editTask }: Props) {
             </div>
           )}
 
+          {/* Run At */}
+          <div>
+            <label htmlFor="run-at-input" className="block text-sm font-medium text-cctv-text mb-1">Run At (optional)</label>
+            <input
+              id="run-at-input"
+              type="datetime-local"
+              value={runAt}
+              onChange={(e) => setRunAt(e.target.value)}
+              className="w-full bg-cctv-bg border border-cctv-border rounded px-3 py-2 text-sm text-cctv-text focus:outline-none focus:border-cctv-accent"
+            />
+            <p className="text-xs text-cctv-text-dim mt-1">
+              {runAt && intervalValue === '0'
+                ? 'One-time task at the specified date/time'
+                : runAt
+                  ? 'Recurring task starting at the specified date/time'
+                  : 'Leave empty to start immediately'}
+            </p>
+          </div>
+
           {/* Interval */}
           <div>
-            <label className="block text-sm font-medium text-cctv-text mb-1">Run Every</label>
+            <label className="block text-sm font-medium text-cctv-text mb-1">
+              {runAt ? 'Repeat Every (0 = one-time)' : 'Run Every'}
+            </label>
             <div className="flex gap-2">
               <input
                 type="number"
-                min="1"
+                min={runAt ? '0' : '1'}
                 value={intervalValue}
                 onChange={(e) => setIntervalValue(e.target.value)}
                 required
@@ -278,6 +370,13 @@ export function ScheduleFormModal({ onClose, editTask }: Props) {
                 <option value="weeks">Weeks</option>
               </select>
             </div>
+          </div>
+
+          {/* Schedule Explainer */}
+          <div className="bg-cctv-bg/50 border border-cctv-border rounded px-3 py-2">
+            <p data-testid="schedule-explainer" className="text-sm text-cctv-accent">
+              {formatScheduleExplainer(runAt, intervalValue, intervalUnit, maxRuns)}
+            </p>
           </div>
 
           {/* Parallel Workers */}

@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING
 from urllib.parse import urlparse
 
@@ -1166,6 +1167,10 @@ class NatsService:
 
     async def _api_create_scheduled_task(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a new scheduled task."""
+        run_at = None
+        if data.get("run_at"):
+            run_at = datetime.fromisoformat(data["run_at"]).astimezone(timezone.utc)
+
         task = await self._scheduler.create_scheduled_task(
             name=data.get("name", ""),
             prompt=data.get("prompt", ""),
@@ -1178,6 +1183,7 @@ class NatsService:
             self_learning=data.get("self_learning", False),
             self_healing=data.get("self_healing", False),
             self_learning_max_runs=data.get("self_learning_max_runs"),
+            run_at=run_at,
         )
         formatted = self._format_scheduled_task(task)
         await self.conn.publish(
@@ -1203,9 +1209,16 @@ class NatsService:
             "self_healing",
             "self_learning_max_runs",
             "self_learning_run_count",
+            "run_at",
         ):
             if key in data:
                 updates[key] = data[key]
+
+        # Parse run_at ISO string to datetime if present
+        if "run_at" in updates and updates["run_at"] is not None:
+            updates["run_at"] = datetime.fromisoformat(updates["run_at"]).astimezone(
+                timezone.utc
+            )
         task = await self._scheduler.update_scheduled_task(schedule_id, **updates)
         if task is None:
             return {"error": f"Scheduled task {schedule_id} not found"}
@@ -1612,6 +1625,7 @@ class NatsService:
             "self_healing": task.self_healing,
             "self_learning_max_runs": task.self_learning_max_runs,
             "self_learning_run_count": task.self_learning_run_count,
+            "run_at": task.run_at.isoformat() if task.run_at else None,
         }
 
     # ── Optimization ───────────────────────────────────────────

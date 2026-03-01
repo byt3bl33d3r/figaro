@@ -24,7 +24,7 @@
         }
     },
 
-    "securityOpt": ["seccomp=figaro-worker/seccomp_profile.json"],
+    "securityOpt": ["seccomp=docker/seccomp_profile.json"],
     "runArgs": [
         "--ipc=host",
 		"--shm-size=1g"

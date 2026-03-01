@@ -67,6 +67,7 @@ class SchedulerService:
             self_healing=model.self_healing,
             self_learning_max_runs=model.self_learning_max_runs,
             self_learning_run_count=model.self_learning_run_count,
+            run_at=model.run_at,
         )
 
     async def start(self) -> None:
@@ -218,18 +219,22 @@ class SchedulerService:
         else:
             # Fall back to in-memory update
             async with self._lock:
-                scheduled_task.last_run_at = datetime.now(timezone.utc)
-                scheduled_task.next_run_at = datetime.now(timezone.utc) + timedelta(
-                    seconds=scheduled_task.interval_seconds
-                )
+                now = datetime.now(timezone.utc)
+                scheduled_task.last_run_at = now
                 scheduled_task.run_count += 1
 
-                # Auto-pause check
-                if (
-                    scheduled_task.max_runs is not None
-                    and scheduled_task.run_count >= scheduled_task.max_runs
-                ):
+                # Check if we should auto-disable
+                should_disable = (
+                    (
+                        scheduled_task.max_runs is not None
+                        and scheduled_task.run_count >= scheduled_task.max_runs
+                    )
+                    or scheduled_task.interval_seconds == 0
+                )
+
+                if should_disable:
                     scheduled_task.enabled = False
+                    scheduled_task.next_run_at = None
                     logger.info(
                         f"Auto-paused scheduled task {scheduled_task.schedule_id} "
                         f"after {scheduled_task.run_count} runs"
@@ -243,6 +248,10 @@ class SchedulerService:
                                 "max_runs": scheduled_task.max_runs,
                             },
                         )
+                else:
+                    scheduled_task.next_run_at = now + timedelta(
+                        seconds=scheduled_task.interval_seconds
+                    )
 
                 await self._save_to_storage()
 
@@ -259,6 +268,7 @@ class SchedulerService:
         self_learning: bool = False,
         self_healing: bool = False,
         self_learning_max_runs: int | None = None,
+        run_at: datetime | None = None,
     ) -> ScheduledTask:
         """Create a new scheduled task."""
         schedule_id = str(uuid.uuid4())
@@ -279,10 +289,14 @@ class SchedulerService:
                     self_healing=self_healing,
                     self_learning_max_runs=self_learning_max_runs,
                     schedule_id=schedule_id,
+                    run_at=run_at,
                 )
                 await session.commit()
                 task = self._model_to_dataclass(model)
         else:
+            next_run = run_at if run_at else (
+                datetime.now(timezone.utc) + timedelta(seconds=interval_seconds)
+            )
             task = ScheduledTask(
                 schedule_id=schedule_id,
                 name=name,
@@ -290,14 +304,14 @@ class SchedulerService:
                 start_url=start_url,
                 interval_seconds=interval_seconds,
                 options=options or {},
-                next_run_at=datetime.now(timezone.utc)
-                + timedelta(seconds=interval_seconds),
+                next_run_at=next_run,
                 parallel_workers=parallel_workers,
                 max_runs=max_runs,
                 notify_on_complete=notify_on_complete,
                 self_learning=self_learning,
                 self_healing=self_healing,
                 self_learning_max_runs=self_learning_max_runs,
+                run_at=run_at,
             )
 
         async with self._lock:
@@ -494,6 +508,11 @@ class SchedulerService:
                     notify_on_complete=notify_on_complete,
                     self_learning=item.get("self_learning", False),
                     self_healing=item.get("self_healing", False),
+                    run_at=(
+                        datetime.fromisoformat(item["run_at"])
+                        if item.get("run_at")
+                        else None
+                    ),
                 )
                 self._scheduled_tasks[task.schedule_id] = task
             logger.info(
@@ -576,6 +595,7 @@ class SchedulerService:
                 "notify_on_complete": t.notify_on_complete,
                 "self_learning": t.self_learning,
                 "self_healing": t.self_healing,
+                "run_at": t.run_at.isoformat() if t.run_at else None,
             }
             for t in self._scheduled_tasks.values()
         ]

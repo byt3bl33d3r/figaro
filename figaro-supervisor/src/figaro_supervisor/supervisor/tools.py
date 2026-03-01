@@ -297,7 +297,7 @@ def create_tools_server(
 
     @tool(
         "create_scheduled_task",
-        "Create a new scheduled task. Extracts a short name, the starting URL, and interval from the user request.",
+        "Create a new scheduled task. Extracts a short name, the starting URL, and interval from the user request. Use run_at for one-time or deferred tasks.",
         {
             "type": "object",
             "properties": {
@@ -315,7 +315,11 @@ def create_tools_server(
                 },
                 "interval_seconds": {
                     "type": "integer",
-                    "description": "How often to run the task, in seconds (e.g. 180 for every 3 minutes, 3600 for every hour)",
+                    "description": "How often to run the task, in seconds (e.g. 180 for every 3 minutes, 3600 for every hour). Use 0 for one-time tasks with run_at. Default: 0 when run_at is set, required otherwise.",
+                },
+                "run_at": {
+                    "type": "string",
+                    "description": "ISO 8601 datetime for when to run the task (e.g. '2026-03-15T10:00:00Z'). If set with interval_seconds=0, it's a one-time task. If set with interval_seconds>0, it's a recurring task starting at this time. If omitted, the task starts immediately.",
                 },
                 "enabled": {
                     "type": "boolean",
@@ -334,28 +338,26 @@ def create_tools_server(
                     "description": "Max self-learning optimization runs (default: 4)",
                 },
             },
-            "required": ["name", "prompt", "start_url", "interval_seconds"],
+            "required": ["name", "prompt", "start_url"],
         },
     )
     async def create_scheduled_task(args: dict[str, Any]) -> dict[str, Any]:
-        return _result(
-            await _request(
-                Subjects.API_SCHEDULED_TASK_CREATE,
-                {
-                    "name": args["name"],
-                    "prompt": args["prompt"],
-                    "start_url": args["start_url"],
-                    "interval_seconds": args["interval_seconds"],
-                    "enabled": args.get("enabled", True),
-                    "parallel_workers": args.get("parallel_workers", 1),
-                    "max_runs": args.get("max_runs"),
-                    "notify_on_complete": True,
-                    "self_learning": True,
-                    "self_healing": True,
-                    "self_learning_max_runs": args.get("self_learning_max_runs", 4),
-                },
-            )
-        )
+        data: dict[str, Any] = {
+            "name": args["name"],
+            "prompt": args["prompt"],
+            "start_url": args["start_url"],
+            "interval_seconds": args.get("interval_seconds", 0 if "run_at" in args else 3600),
+            "enabled": args.get("enabled", True),
+            "parallel_workers": args.get("parallel_workers", 1),
+            "max_runs": args.get("max_runs"),
+            "notify_on_complete": True,
+            "self_learning": True,
+            "self_healing": True,
+            "self_learning_max_runs": args.get("self_learning_max_runs", 4),
+        }
+        if "run_at" in args:
+            data["run_at"] = args["run_at"]
+        return _result(await _request(Subjects.API_SCHEDULED_TASK_CREATE, data))
 
     @tool(
         "update_scheduled_task",
@@ -369,7 +371,11 @@ def create_tools_server(
                 "start_url": {"type": "string", "description": "New starting URL"},
                 "interval_seconds": {
                     "type": "integer",
-                    "description": "New interval in seconds",
+                    "description": "New interval in seconds (0 = one-time when used with run_at)",
+                },
+                "run_at": {
+                    "type": "string",
+                    "description": "ISO 8601 datetime for when to run the task, or null to clear it",
                 },
                 "enabled": {"type": "boolean", "description": "New enabled state"},
             },
@@ -378,7 +384,7 @@ def create_tools_server(
     )
     async def update_scheduled_task(args: dict[str, Any]) -> dict[str, Any]:
         data: dict[str, Any] = {"schedule_id": args["id"]}
-        for key in ("name", "prompt", "start_url", "interval_seconds", "enabled"):
+        for key in ("name", "prompt", "start_url", "interval_seconds", "run_at", "enabled"):
             if key in args:
                 data[key] = args[key]
         return _result(

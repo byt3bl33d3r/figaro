@@ -175,6 +175,7 @@ export interface ScheduledTask {
   created_at: string;
   last_run_at: string | null;
   next_run_at: string | null;
+  run_at: string | null;
   run_count: number;
   options: Record<string, unknown>;
   parallel_workers: number;
@@ -191,6 +192,7 @@ export interface ScheduledTaskCreate {
   prompt: string;
   start_url: string;
   interval_seconds: number;
+  run_at?: string | null;
   options?: Record<string, unknown>;
   parallel_workers?: number;
   max_runs?: number | null;
@@ -205,6 +207,7 @@ export interface ScheduledTaskUpdate {
   prompt?: string;
   start_url?: string;
   interval_seconds?: number;
+  run_at?: string | null;
   enabled?: boolean;
   options?: Record<string, unknown>;
   parallel_workers?: number;

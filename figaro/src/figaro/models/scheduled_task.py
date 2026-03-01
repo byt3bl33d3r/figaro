@@ -27,3 +27,4 @@ class ScheduledTask:
     self_healing: bool = False
     self_learning_max_runs: int | None = None
     self_learning_run_count: int = 0
+    run_at: datetime | None = None
