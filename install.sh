@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# Pipe-safe: read entire script before executing (protects curl|bash usage)
+{
 set -euo pipefail
 
 # Figaro install script
@@ -148,6 +150,11 @@ parse_args "$@"
 
 is_interactive() { [[ -t 0 ]]; }
 
+# When piped, use plain Docker build output instead of fancy TTY progress
+if ! is_interactive; then
+    export BUILDKIT_PROGRESS=plain
+fi
+
 prompt_continue() {
     if ! is_interactive; then return 0; fi
     local msg="${1:-Continue?}"
@@ -217,24 +224,33 @@ ensure_repo() {
         return 0
     fi
 
-    info "Not in the Figaro repo -- fetching it..."
+    if [[ -d "figaro" ]]; then
+        warn "A 'figaro/' directory exists but doesn't look like a valid repo."
+        if is_interactive; then
+            if prompt_continue "Remove it and re-fetch?"; then
+                rm -rf figaro
+            else
+                die "Aborting. Remove or rename 'figaro/' and re-run."
+            fi
+        else
+            die "'figaro/' already exists but is not a valid repo. Remove it and re-run."
+        fi
+    fi
 
-    local zip_url="https://github.com/byt3bl33d3r/figaro/archive/refs/heads/main.zip"
+    info "Fetching Figaro repo..."
+
+    local tar_url="https://github.com/byt3bl33d3r/figaro/archive/refs/heads/main.tar.gz"
 
     if command -v git &>/dev/null; then
-        git clone "$REPO_URL" figaro
+        git clone "$REPO_URL" figaro < /dev/null
     elif command -v curl &>/dev/null; then
-        info "git not found, downloading zip with curl..."
-        curl -fsSL -o figaro.zip "$zip_url"
-        unzip -q figaro.zip
+        info "git not found, downloading tarball with curl..."
+        curl -fsSL "$tar_url" | tar xz
         mv figaro-main figaro
-        rm figaro.zip
     elif command -v wget &>/dev/null; then
-        info "git not found, downloading zip with wget..."
-        wget -q -O figaro.zip "$zip_url"
-        unzip -q figaro.zip
+        info "git not found, downloading tarball with wget..."
+        wget -qO- "$tar_url" | tar xz
         mv figaro-main figaro
-        rm figaro.zip
     else
         die "Cannot fetch repo: none of git, curl, or wget are installed."
     fi
@@ -276,23 +292,80 @@ confirm_prod_overlay() {
 
 # ---------- .env setup ----------
 
+env_set() {
+    local key="$1" value="$2"
+    if grep -q "^${key}=" .env; then
+        # Remove old line, then append new value.
+        # Avoids sed -i (not portable to macOS) and regex injection from values.
+        grep -v "^${key}=" .env > .env.tmp && mv .env.tmp .env
+    fi
+    printf '%s=%s\n' "$key" "$value" >> .env
+}
+
+env_get() {
+    local key="$1"
+    sed -n "s/^${key}=//p" .env
+}
+
+prompt_value() {
+    local varname="$1" prompt_msg="$2" default="${3:-}"
+    local current
+    current="$(env_get "$varname")"
+
+    # Keep existing non-placeholder values
+    if [[ -n "$current" && "$current" != *-example ]]; then
+        return 0
+    fi
+
+    local input
+    if [[ -n "$default" ]]; then
+        read -rp "$prompt_msg [$default]: " input
+        env_set "$varname" "${input:-$default}"
+    else
+        read -rp "$prompt_msg (leave blank to skip): " input
+        if [[ -n "$input" ]]; then
+            env_set "$varname" "$input"
+        fi
+    fi
+}
+
+ensure_encryption_key() {
+    local existing
+    existing="$(env_get "FIGARO_ENCRYPTION_KEY")"
+    if [[ -z "$existing" ]]; then
+        if ! command -v openssl &>/dev/null; then
+            die "openssl is required to generate FIGARO_ENCRYPTION_KEY. Install it and re-run."
+        fi
+        info "Generating FIGARO_ENCRYPTION_KEY..."
+        env_set "FIGARO_ENCRYPTION_KEY" "$(openssl rand -base64 32)"
+    fi
+}
+
 setup_env() {
     if [[ -f .env ]]; then
         info ".env file exists"
+        ensure_encryption_key
         return 0
     fi
 
     info "Creating .env from .env.example..."
     cp .env.example .env
 
-    if ! grep -q "^FIGARO_ENCRYPTION_KEY=" .env; then
-        echo "FIGARO_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
-    fi
+    ensure_encryption_key
 
     if is_interactive; then
-        if prompt_continue "Open .env in your editor?"; then
-            "${EDITOR:-${VISUAL:-nano}}" .env
+        info ""
+        info "Configure optional settings (press Enter to skip):"
+        info ""
+        prompt_value "OPENAI_API_KEY" "  OpenAI API key (for memory/embeddings)"
+        prompt_value "GATEWAY_TELEGRAM_BOT_TOKEN" "  Telegram bot token (for Telegram integration)"
+
+        local tg_token
+        tg_token="$(env_get "GATEWAY_TELEGRAM_BOT_TOKEN")"
+        if [[ -n "$tg_token" && "$tg_token" != *-example ]]; then
+            prompt_value "GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS" "  Telegram allowed chat IDs (comma-separated)"
         fi
+        info ""
     else
         warn "Edit .env before running Figaro (at minimum, review the API keys)."
     fi
@@ -316,11 +389,13 @@ check_claude_creds() {
     if [[ $missing -eq 1 ]]; then
         warn "Claude credentials are required for workers/supervisors."
         warn "Run 'claude' and sign in to create them."
-        warn "On macOS, you can also export credentials with:"
+        warn "On macOS, you also need to export credentials with:"
         warn "  security find-generic-password -s \"Claude Code-credentials\" -w > ~/.claude/.credentials.json"
 
         if is_interactive; then
             prompt_continue "Continue without credentials?" || die "Aborted."
+        else
+            warn "Continuing without credentials. Workers and supervisors will fail to start."
         fi
     else
         info "Claude credentials found"
@@ -402,3 +477,6 @@ case "$COMMAND" in
     down)  cmd_down ;;
     scale) cmd_scale ;;
 esac
+
+exit
+}

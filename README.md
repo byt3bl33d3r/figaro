@@ -11,11 +11,11 @@
 </p>
 
 
-Figaro is an orchestration platform for Claude computer use agents. It manages fleets of Claude agents that operate full desktop environments -- navigating browsers, filling forms, clicking through UIs, and automating workflows that require real screen interaction. Every agent runs inside a containerized Linux desktop with Chromium, and all desktops are live-streamed to a central dashboard via VNC.
+Figaro orchestrates fleets of Claude computer use agents that automate browser-based workflows on full desktop environments. Agents run inside containerized Linux desktops or connect to any VNC-accessible machine -- remote servers, cloud VMs, or physical workstations. All desktops are live-streamed to a central dashboard, and a supervisor agent handles task delegation. Everything can be managed conversationally through external channels like Telegram.
 
-Beyond the built-in containerized workers, Figaro can connect to any VNC-accessible desktop -- local machines, remote servers, cloud VMs, or physical workstations running macOS, Windows, or Linux. Desktops are added from the UI with a VNC URL (`vnc://`, `ws://`, or `wss://`), and the supervisor agent can observe and interact with any connected desktop via screenshots, typing, clicking, and key presses. When a worker agent later connects with a matching ID, the desktop-only entry is automatically upgraded to a full agent worker; when the agent disconnects, the desktop remains visible.
+Figaro can connect to any VNC-accessible desktop -- local machines, remote servers, cloud VMs, or physical workstations running macOS, Windows, or Linux. Desktops are added from the UI with a VNC URL (`vnc://`, `ws://`, or `wss://`), and the supervisor agent can observe and interact with any connected desktop via screenshots, typing, clicking, and key presses.
 
-The system is built for long-running tasks that take minutes to hours. All services communicate over NATS (pub/sub + JetStream for durable task events). A supervisor agent handles task optimization and delegation. A channel-agnostic gateway routes messages to external channels (Telegram, etc.) for human-in-the-loop interactions.
+The system is built for long-running tasks that take minutes to hours. All services communicate over [NATS](https://nats.io) (pub/sub + JetStream for durable task events). A supervisor agent handles task optimization and delegation.
 
 You can also manage everything by chatting with the supervisor agent through the gateway -- for example, via Telegram. Send it natural language instructions to create tasks, schedule recurring jobs, check worker status, or ask questions about running tasks. The supervisor understands the full system and can delegate work to workers, inspect desktops via VNC, and report back results, all through a conversational interface.
 
