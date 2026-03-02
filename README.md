@@ -11,7 +11,7 @@
 </p>
 
 
-Figaro orchestrates fleets of Claude computer use agents that automate browser-based workflows on full desktop environments. Agents run inside containerized Linux desktops or connect to any VNC-accessible machine -- remote servers, cloud VMs, or physical workstations. All desktops are live-streamed to a central dashboard, and a supervisor agent handles task delegation. Everything can be managed conversationally through external channels like Telegram.
+Figaro orchestrates fleets of Claude computer use agents that automate workflows on full desktop environments. Agents run inside containerized Linux desktops or connect to any VNC-accessible machine -- remote servers, cloud VMs, or physical workstations. All desktops are live-streamed to a central dashboard, and a supervisor agent handles task delegation. Everything can be managed conversationally through external channels like Telegram.
 
 Figaro can connect to any VNC-accessible desktop -- local machines, remote servers, cloud VMs, or physical workstations running macOS, Windows, or Linux. Desktops are added from the UI with a VNC URL (`vnc://`, `ws://`, or `wss://`), and the supervisor agent can observe and interact with any connected desktop via screenshots, typing, clicking, and key presses.
 
