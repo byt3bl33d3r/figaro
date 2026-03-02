@@ -1,4 +1,4 @@
-import type { WorkerStatus, ConnectionStatus } from '../types';
+import type { WorkerStatus, ConnectionStatus, TaskStatus } from '../types';
 
 interface WorkerStatusBadgeProps {
   status: WorkerStatus;
@@ -57,6 +57,28 @@ export function ConnectionStatusBadge({ status }: ConnectionStatusBadgeProps) {
   return (
     <span className={`flex items-center gap-2 px-3 py-1 text-xs uppercase tracking-wider rounded ${statusStyles[status]}`}>
       <span className={`w-2 h-2 rounded-full ${statusDot[status]}`} />
+      {status}
+    </span>
+  );
+}
+
+interface TaskStatusBadgeProps {
+  status: TaskStatus;
+}
+
+export function TaskStatusBadge({ status }: TaskStatusBadgeProps) {
+  const statusStyles: Record<TaskStatus, string> = {
+    pending: 'bg-cctv-text-dim/20 text-cctv-text-dim border-cctv-text-dim/50',
+    assigned: 'bg-cctv-warning/20 text-cctv-warning border-cctv-warning/50',
+    running: 'bg-cctv-accent/20 text-cctv-accent border-cctv-accent/50',
+    completed: 'bg-cctv-accent/20 text-cctv-accent border-cctv-accent/50',
+    failed: 'bg-cctv-error/20 text-cctv-error border-cctv-error/50',
+  };
+
+  return (
+    <span
+      className={`px-2 py-0.5 text-xs uppercase tracking-wider border rounded ${statusStyles[status]}`}
+    >
       {status}
     </span>
   );

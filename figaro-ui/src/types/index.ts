@@ -28,6 +28,18 @@ export type TaskTarget = 'worker' | 'supervisor' | 'auto';
 // Task types
 export type TaskStatus = 'pending' | 'assigned' | 'running' | 'completed' | 'failed';
 
+export type AgentType = 'worker' | 'supervisor';
+
+export interface ActiveTask {
+  task_id: string;
+  prompt: string;
+  status: TaskStatus;
+  agent_id: string;
+  agent_type: AgentType;
+  assigned_at: string;
+  options: Record<string, unknown>;
+}
+
 export interface Task {
   task_id: string;
   prompt: string;

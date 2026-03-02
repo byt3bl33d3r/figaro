@@ -8,11 +8,13 @@ import { Sidebar } from './Sidebar';
 import { DesktopModal } from './DesktopModal';
 import { HelpRequestNotification } from './HelpRequestNotification';
 import { HelpRequestModal } from './HelpRequestModal';
+import { KanbanBoard } from './KanbanBoard';
 
 export function Dashboard() {
   const { status } = useNats();
   const workerCount = useWorkersStore((state) => state.workers.size);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'grid' | 'board'>('grid');
   const activeRequestId = useHelpRequestsStore((state) => state.activeRequestId);
   const setActiveRequestId = useHelpRequestsStore((state) => state.setActiveRequestId);
 
@@ -35,6 +37,20 @@ export function Dashboard() {
           </h1>
         </div>
         <div className="flex items-center gap-4">
+          <div className="flex rounded border border-cctv-border overflow-hidden">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`px-3 py-1 text-xs uppercase tracking-wider transition-colors ${viewMode === 'grid' ? 'bg-cctv-accent/20 text-cctv-accent' : 'text-cctv-text-dim hover:text-cctv-text'}`}
+            >
+              Grid
+            </button>
+            <button
+              onClick={() => setViewMode('board')}
+              className={`px-3 py-1 text-xs uppercase tracking-wider transition-colors ${viewMode === 'board' ? 'bg-cctv-accent/20 text-cctv-accent' : 'text-cctv-text-dim hover:text-cctv-text'}`}
+            >
+              Board
+            </button>
+          </div>
           <span className="text-sm text-cctv-text-dim">
             {workerCount} worker{workerCount !== 1 ? 's' : ''} connected
           </span>
@@ -44,9 +60,12 @@ export function Dashboard() {
 
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Desktop Grid */}
         <main className="flex-1 overflow-auto">
-          <DesktopGrid onWorkerClick={handleWorkerClick} />
+          {viewMode === 'grid' ? (
+            <DesktopGrid onWorkerClick={handleWorkerClick} />
+          ) : (
+            <KanbanBoard onWorkerClick={handleWorkerClick} />
+          )}
         </main>
 
         {/* Sidebar */}

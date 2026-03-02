@@ -28,6 +28,7 @@ import { useSupervisorsStore } from "../stores/supervisors";
 import { useMessagesStore } from "../stores/messages";
 import { useScheduledTasksStore } from "../stores/scheduledTasks";
 import { useHelpRequestsStore } from "../stores/helpRequests";
+import { useTasksStore } from "../stores/tasks";
 
 const jc = JSONCodec();
 
@@ -80,6 +81,7 @@ class NatsManager {
 
       // Clear stale events before re-subscribing (JetStream will replay)
       useMessagesStore.getState().clearEvents();
+      useTasksStore.getState().clearTasks();
 
       this.setupCoreSubscriptions();
       await this.setupJetStreamSubscription();
@@ -551,6 +553,7 @@ class NatsManager {
         const payload = data as unknown as TaskCompletePayload & {
           supervisor_id: string;
         };
+        useTasksStore.getState().removeTask(payload.task_id);
         supervisorsStore.updateSupervisorStatus(
           payload.supervisor_id,
           "idle"
@@ -597,12 +600,30 @@ class NatsManager {
             type: "task_submitted_to_supervisor",
             data: payload,
           });
+          useTasksStore.getState().addTask({
+            task_id: payload.task_id,
+            prompt: payload.prompt,
+            status: "assigned",
+            agent_id: payload.supervisor_id,
+            agent_type: "supervisor",
+            assigned_at: new Date().toISOString(),
+            options: {},
+          });
         } else if (payload.worker_id) {
           workersStore.updateWorkerStatus(payload.worker_id, "busy");
           messagesStore.addEvent({
             worker_id: payload.worker_id,
             type: "task_assigned",
             data: payload,
+          });
+          useTasksStore.getState().addTask({
+            task_id: payload.task_id,
+            prompt: payload.prompt,
+            status: "assigned",
+            agent_id: payload.worker_id,
+            agent_type: "worker",
+            assigned_at: new Date().toISOString(),
+            options: {},
           });
         }
         break;
@@ -626,6 +647,7 @@ class NatsManager {
         const payload = data as unknown as TaskCompletePayload & {
           supervisor_id?: string;
         };
+        useTasksStore.getState().removeTask(payload.task_id);
         if (payload.supervisor_id) {
           supervisorsStore.updateSupervisorStatus(
             payload.supervisor_id,
@@ -652,6 +674,7 @@ class NatsManager {
 
       case "error": {
         const payload = data as unknown as ErrorPayload;
+        useTasksStore.getState().removeTask(payload.task_id);
         messagesStore.addEvent({
           type: "error",
           data: payload,
