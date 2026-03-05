@@ -94,6 +94,8 @@ class Subjects:
     API_HELP_REQUEST_RESPOND = "figaro.api.help-requests.respond"
     API_HELP_REQUEST_DISMISS = "figaro.api.help-requests.dismiss"
     API_VNC = "figaro.api.vnc"
+    API_SSH = "figaro.api.ssh"
+    API_TELNET = "figaro.api.telnet"
     API_TASK_STOP = "figaro.api.tasks.stop"
     API_DESKTOP_WORKERS_REGISTER = "figaro.api.desktop-workers.register"
     API_DESKTOP_WORKERS_REMOVE = "figaro.api.desktop-workers.remove"

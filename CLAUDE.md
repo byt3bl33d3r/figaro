@@ -162,6 +162,8 @@ figaro.api.scheduled-tasks.{get,create,update,delete,toggle,trigger}
 figaro.api.help-requests.respond          # Respond to help request
 figaro.api.help-requests.dismiss          # Dismiss help request
 figaro.api.vnc                            # VNC operations (screenshot, type, key, click)
+figaro.api.ssh                            # SSH operations (run_command)
+figaro.api.telnet                         # Telnet operations (run_command)
 
 # Gateway (Core NATS)
 figaro.gateway.{channel}.send             # Send message via channel
@@ -394,6 +396,28 @@ The supervisor agent can directly observe and interact with worker desktops via 
 - Each VNC tool call uses a 10s NATS request/reply timeout (appropriate since these are quick operations, not long-running tasks)
 - `vnc_client.py` normalizes 65+ key name aliases (e.g. "ctrl" → "Ctrl", "escape" → "Esc") to X11 keysym names required by asyncvnc
 - Screenshot quality is configurable (0-100, default 70) to balance image clarity vs payload size
+
+### Supervisor SSH/Telnet Interaction (Supervisor -> Worker Terminal)
+The supervisor agent can execute commands on workers with SSH or telnet connections, without delegating a full task. This enables the supervisor to run diagnostics, check status, or perform quick operations on terminal-based workers.
+
+**Tools available to the supervisor agent:**
+- `ssh_run_command(worker_id, command, timeout=30)` — executes a shell command via SSH, returns stdout, stderr, and exit code
+- `telnet_run_command(worker_id, command, timeout=10)` — executes a command via telnet, returns the terminal output
+
+**Flow:**
+1. Supervisor agent calls a terminal tool (e.g. `ssh_run_command`)
+2. Tool sends NATS request to `figaro.api.ssh` (or `figaro.api.telnet`) with `{worker_id, action, command, ...}`
+3. Orchestrator looks up worker in registry, extracts connection details from `novnc_url`
+4. Orchestrator connects to the worker via asyncssh (or telnetlib3) and executes the command
+5. Orchestrator returns the result via NATS reply
+6. Supervisor agent receives stdout/stderr/exit_code (SSH) or output (telnet)
+
+**Design notes:**
+- Only works for workers with `ssh://` or `telnet://` connection URLs
+- SSH uses `known_hosts=None` (appropriate for containerized environments)
+- Telnet handles login prompts automatically when credentials are provided
+- Each tool call opens a fresh connection (no connection pooling)
+- NATS request timeout is set dynamically: `max(30s, command_timeout + 5s)`
 
 ### Self-Learning Scheduled Task Flow
 Scheduled tasks with `self_learning=True` automatically optimize their prompts after each run:

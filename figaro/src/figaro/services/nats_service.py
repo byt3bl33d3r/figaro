@@ -13,6 +13,8 @@ from figaro.models import ClientType
 from figaro.models.messages import WorkerStatus
 from figaro.services.registry import Registry
 from figaro.services.task_manager import TaskManager, TaskStatus
+from figaro.services.ssh_client import parse_ssh_url, run_command as ssh_run_command
+from figaro.services.telnet_client import parse_telnet_url, run_command as telnet_run_command
 from figaro.services.vnc_client import (
     click_with_client,
     key_with_client,
@@ -336,6 +338,16 @@ class NatsService:
         await conn.subscribe_request(
             Subjects.API_VNC,
             self._api_vnc,
+            queue="orchestrator",
+        )
+        await conn.subscribe_request(
+            Subjects.API_SSH,
+            self._api_ssh,
+            queue="orchestrator",
+        )
+        await conn.subscribe_request(
+            Subjects.API_TELNET,
+            self._api_telnet,
             queue="orchestrator",
         )
         await conn.subscribe_request(
@@ -1602,6 +1614,78 @@ class NatsService:
             return {"error": f"VNC connection timed out for worker {worker_id}"}
         except Exception as e:
             logger.exception("VNC %s failed for worker %s", action, worker_id)
+            return {"error": str(e)}
+
+    async def _api_ssh(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Handle SSH command execution requests."""
+        worker_id = data.get("worker_id", "")
+        action = data.get("action", "")
+
+        logger.info("SSH %s requested for worker %s", action, worker_id)
+
+        conn = await self._registry.get_connection(worker_id)
+        if conn is None:
+            logger.warning("SSH %s: worker %s not found in registry", action, worker_id)
+            return {"error": "Worker not found"}
+
+        novnc_url = conn.novnc_url or ""
+        url_host, url_port, url_user, url_pass = parse_ssh_url(novnc_url)
+        username = conn.vnc_username or url_user
+        password = conn.vnc_password or url_pass
+
+        try:
+            if action == "run_command":
+                command = data.get("command", "")
+                timeout = data.get("timeout", 30.0)
+                result = await ssh_run_command(
+                    url_host, url_port, username, password, command, timeout=timeout
+                )
+                logger.info("SSH run_command for worker %s: exit_code=%s", worker_id, result.get("exit_code"))
+                return result
+            else:
+                logger.warning("SSH unknown action '%s' for worker %s", action, worker_id)
+                return {"error": f"Unknown action: {action}"}
+        except asyncio.TimeoutError:
+            logger.error("SSH %s timed out for worker %s", action, worker_id)
+            return {"error": f"SSH command timed out for worker {worker_id}"}
+        except Exception as e:
+            logger.exception("SSH %s failed for worker %s", action, worker_id)
+            return {"error": str(e)}
+
+    async def _api_telnet(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Handle telnet command execution requests."""
+        worker_id = data.get("worker_id", "")
+        action = data.get("action", "")
+
+        logger.info("Telnet %s requested for worker %s", action, worker_id)
+
+        conn = await self._registry.get_connection(worker_id)
+        if conn is None:
+            logger.warning("Telnet %s: worker %s not found in registry", action, worker_id)
+            return {"error": "Worker not found"}
+
+        novnc_url = conn.novnc_url or ""
+        url_host, url_port, url_user, url_pass = parse_telnet_url(novnc_url)
+        username = conn.vnc_username or url_user
+        password = conn.vnc_password or url_pass
+
+        try:
+            if action == "run_command":
+                command = data.get("command", "")
+                timeout = data.get("timeout", 10.0)
+                result = await telnet_run_command(
+                    url_host, url_port, username, password, command, timeout=timeout
+                )
+                logger.info("Telnet run_command for worker %s completed", worker_id)
+                return result
+            else:
+                logger.warning("Telnet unknown action '%s' for worker %s", action, worker_id)
+                return {"error": f"Unknown action: {action}"}
+        except asyncio.TimeoutError:
+            logger.error("Telnet %s timed out for worker %s", action, worker_id)
+            return {"error": f"Telnet command timed out for worker {worker_id}"}
+        except Exception as e:
+            logger.exception("Telnet %s failed for worker %s", action, worker_id)
             return {"error": str(e)}
 
     async def _api_register_desktop_worker(

@@ -175,10 +175,10 @@ describe("createSupervisorToolsServer", () => {
     expect(server.name).toBe("orchestrator");
   });
 
-  test("creates all 18 tools", () => {
+  test("creates all 20 tools", () => {
     const client = createMockClient();
     const server = createSupervisorToolsServer(client) as any;
-    expect(server.tools.length).toBe(18);
+    expect(server.tools.length).toBe(20);
   });
 
   test("tool names match expected set", () => {
@@ -199,7 +199,9 @@ describe("createSupervisorToolsServer", () => {
       "press_key",
       "search_tasks",
       "send_screenshot",
+      "ssh_run_command",
       "take_screenshot",
+      "telnet_run_command",
       "toggle_scheduled_task",
       "type_text",
       "unlock_screen",
@@ -257,6 +259,104 @@ describe("createSupervisorToolsServer", () => {
     const res = await sendScreenshotTool.handler({ worker_id: "w1" });
     expect(res.content[0].text).toContain("Error");
     expect(res.content[0].text).toContain("No channel context");
+  });
+
+  test("ssh_run_command sends correct NATS request", async () => {
+    const client = createMockClient({
+      request: mock(() =>
+        Promise.resolve({
+          stdout: "file1.txt\nfile2.txt\n",
+          stderr: "",
+          exit_code: 0,
+        }),
+      ),
+    });
+
+    const server = createSupervisorToolsServer(client) as any;
+    const sshTool = server.tools.find((t: any) => t.name === "ssh_run_command");
+
+    const res = await sshTool.handler({
+      worker_id: "w1",
+      command: "ls /",
+      timeout: 60,
+    });
+
+    const requestMock = client.request as ReturnType<typeof mock>;
+    expect(requestMock).toHaveBeenCalledWith(
+      "figaro.api.ssh",
+      {
+        action: "run_command",
+        worker_id: "w1",
+        command: "ls /",
+        timeout: 60,
+      },
+      65000, // max(30000, (60+5)*1000)
+    );
+    expect(res.content[0].text).toContain("file1.txt");
+    expect(res.content[0].text).toContain("exit_code");
+  });
+
+  test("ssh_run_command returns error on failure", async () => {
+    const client = createMockClient({
+      request: mock(() =>
+        Promise.resolve({ error: "Connection refused" }),
+      ),
+    });
+
+    const server = createSupervisorToolsServer(client) as any;
+    const sshTool = server.tools.find((t: any) => t.name === "ssh_run_command");
+
+    const res = await sshTool.handler({ worker_id: "w1", command: "ls" });
+    expect(res.content[0].text).toContain("Error");
+    expect(res.content[0].text).toContain("Connection refused");
+  });
+
+  test("telnet_run_command sends correct NATS request", async () => {
+    const client = createMockClient({
+      request: mock(() =>
+        Promise.resolve({ output: "hello world" }),
+      ),
+    });
+
+    const server = createSupervisorToolsServer(client) as any;
+    const telnetTool = server.tools.find(
+      (t: any) => t.name === "telnet_run_command",
+    );
+
+    const res = await telnetTool.handler({
+      worker_id: "w1",
+      command: "echo hello",
+    });
+
+    const requestMock = client.request as ReturnType<typeof mock>;
+    expect(requestMock).toHaveBeenCalledWith(
+      "figaro.api.telnet",
+      {
+        action: "run_command",
+        worker_id: "w1",
+        command: "echo hello",
+        timeout: undefined,
+      },
+      30000, // max(30000, (10+5)*1000) = 30000
+    );
+    expect(res.content[0].text).toContain("hello world");
+  });
+
+  test("telnet_run_command returns error on failure", async () => {
+    const client = createMockClient({
+      request: mock(() =>
+        Promise.resolve({ error: "Connection timed out" }),
+      ),
+    });
+
+    const server = createSupervisorToolsServer(client) as any;
+    const telnetTool = server.tools.find(
+      (t: any) => t.name === "telnet_run_command",
+    );
+
+    const res = await telnetTool.handler({ worker_id: "w1", command: "ls" });
+    expect(res.content[0].text).toContain("Error");
+    expect(res.content[0].text).toContain("Connection timed out");
   });
 
   test("send_screenshot works with sourceMetadata", async () => {

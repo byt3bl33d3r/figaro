@@ -95,6 +95,8 @@ export const Subjects = {
   API_HELP_REQUEST_RESPOND: "figaro.api.help-requests.respond" as const,
   API_HELP_REQUEST_DISMISS: "figaro.api.help-requests.dismiss" as const,
   API_VNC: "figaro.api.vnc" as const,
+  API_SSH: "figaro.api.ssh" as const,
+  API_TELNET: "figaro.api.telnet" as const,
   API_TASK_STOP: "figaro.api.tasks.stop" as const,
   API_DESKTOP_WORKERS_REGISTER: "figaro.api.desktop-workers.register" as const,
   API_DESKTOP_WORKERS_REMOVE: "figaro.api.desktop-workers.remove" as const,
