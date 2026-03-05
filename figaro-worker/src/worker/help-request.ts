@@ -1,17 +1,18 @@
 /**
  * Worker-side help request handler for human-in-the-loop assistance.
  *
- * Subscribes per-request to the specific JetStream response subject
- * (figaro.help.{request_id}.response) via the HELP stream. JetStream
- * ensures responses survive NATS reconnections during long waits,
- * matching the Python supervisor's durable subscription approach.
- *
- * Ported from figaro-supervisor/src/figaro_supervisor/supervisor/client.py
+ * Subscribes per-request to the specific Core NATS response subject
+ * (figaro.help.{request_id}.response). JetStream publish also delivers
+ * to Core NATS subscribers, so this works with the orchestrator's
+ * js_publish without needing a JetStream consumer.
  */
 
+import { JSONCodec } from "nats";
 import type { NatsClient } from "../nats/client";
 import { Subjects } from "../nats/subjects";
 import type { HelpResponsePayload } from "../types";
+
+const codec = JSONCodec<Record<string, unknown>>();
 
 export class HelpRequestHandler {
   private readonly client: NatsClient;
@@ -23,10 +24,10 @@ export class HelpRequestHandler {
   /**
    * Request human help and wait for a response.
    *
-   * Subscribes to the specific response subject via JetStream before
+   * Subscribes to the specific response subject via Core NATS before
    * sending the request, ensuring no race conditions with delivery.
-   * JetStream subscriptions survive NATS reconnections, so responses
-   * are not lost during transient connection drops.
+   * The orchestrator publishes responses via js_publish, which also
+   * delivers to Core NATS subscribers on the same subject.
    *
    * @param taskId - The ID of the current task
    * @param questions - List of questions in AskUserQuestion format
@@ -49,18 +50,24 @@ export class HelpRequestHandler {
       settle = res;
     });
 
-    // Subscribe via JetStream (HELP stream covers figaro.help.*.response)
-    // before publishing the request to prevent race conditions.
-    const sub = await this.client.subscribeJetStream(
-      subject,
-      (data: Record<string, unknown>) => {
-        if (settled) return;
-        if (data.request_id === requestId) {
-          settled = true;
-          settle(data as unknown as HelpResponsePayload);
+    // Subscribe via Core NATS before publishing the request to prevent
+    // race conditions. JetStream js_publish delivers to Core NATS
+    // subscribers, so no JetStream consumer needed.
+    const sub = this.client.conn.subscribe(subject);
+    (async () => {
+      for await (const msg of sub) {
+        try {
+          const data = codec.decode(msg.data);
+          if (settled) return;
+          if (data.request_id === requestId) {
+            settled = true;
+            settle(data as unknown as HelpResponsePayload);
+          }
+        } catch (err) {
+          console.error(`[help-request] Error processing response:`, err);
         }
-      },
-    );
+      }
+    })();
 
     try {
       // Publish the help request AFTER subscribing (race condition prevention)

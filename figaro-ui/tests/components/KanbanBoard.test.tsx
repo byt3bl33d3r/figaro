@@ -230,6 +230,41 @@ describe('KanbanColumn', () => {
     const column = container.firstChild as HTMLElement;
     expect(column.className).not.toContain('opacity-50');
   });
+
+  it('should make column clickable for workers when onColumnClick is provided', () => {
+    const onColumnClick = vi.fn();
+    const { container } = render(
+      <KanbanColumn agentId="worker-1" agentType="worker" status="idle" onColumnClick={onColumnClick} />,
+    );
+
+    const column = container.firstChild as HTMLElement;
+    expect(column.className).toContain('cursor-pointer');
+
+    fireEvent.click(column);
+    expect(onColumnClick).toHaveBeenCalledWith('worker-1');
+  });
+
+  it('should make column clickable for supervisors when onColumnClick is provided', () => {
+    const onColumnClick = vi.fn();
+    const { container } = render(
+      <KanbanColumn agentId="sup-1" agentType="supervisor" status="idle" onColumnClick={onColumnClick} />,
+    );
+
+    const column = container.firstChild as HTMLElement;
+    expect(column.className).toContain('cursor-pointer');
+
+    fireEvent.click(column);
+    expect(onColumnClick).toHaveBeenCalledWith('sup-1');
+  });
+
+  it('should not make column clickable without onColumnClick', () => {
+    const { container } = render(
+      <KanbanColumn agentId="worker-1" agentType="worker" status="idle" />,
+    );
+
+    const column = container.firstChild as HTMLElement;
+    expect(column.className).not.toContain('cursor-pointer');
+  });
 });
 
 describe('KanbanCard', () => {

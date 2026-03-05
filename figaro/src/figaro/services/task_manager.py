@@ -2,6 +2,7 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass, field
+from datetime import datetime
 from enum import Enum
 from typing import Any
 
@@ -34,6 +35,8 @@ class Task:
     messages: list[dict[str, Any]] = field(default_factory=list)
     source: str = "api"
     source_metadata: dict[str, Any] = field(default_factory=dict)
+    created_at: datetime | None = None
+    completed_at: datetime | None = None
 
     @classmethod
     def from_model(cls, model: TaskModel) -> "Task":
@@ -49,6 +52,8 @@ class Task:
             messages=[],  # Messages loaded separately
             source=model.source,
             source_metadata=model.source_metadata or {},
+            created_at=model.created_at,
+            completed_at=model.completed_at,
         )
 
 
@@ -147,13 +152,14 @@ class TaskManager:
         self,
         status: str | None = None,
         limit: int | None = None,
+        worker_id: str | None = None,
     ) -> list[Task]:
-        """Get all tasks, optionally filtered by status and limited."""
+        """Get all tasks, optionally filtered by status, worker_id, and limited."""
         # Try to get from database first if available
         if self._session_factory:
             async with self._session_factory() as session:
                 repo = TaskRepository(session)
-                models = await repo.list_all(status=status, limit=limit)
+                models = await repo.list_all(status=status, limit=limit, worker_id=worker_id)
                 tasks = []
                 for model in models:
                     task = Task.from_model(model)
@@ -164,6 +170,8 @@ class TaskManager:
         # Fall back to in-memory
         async with self._lock:
             tasks = list(self._tasks.values())
+            if worker_id:
+                tasks = [t for t in tasks if t.worker_id == worker_id]
             if status:
                 tasks = [t for t in tasks if t.status.value == status]
             if limit:

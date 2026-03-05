@@ -36,7 +36,7 @@ export function KanbanCard({ task, onWorkerClick }: KanbanCardProps) {
   return (
     <div
       className={`p-3 bg-cctv-bg rounded border border-cctv-border ${isClickable ? 'cursor-pointer hover:border-cctv-accent/50' : ''}`}
-      onClick={isClickable ? () => onWorkerClick(task.agent_id) : undefined}
+      onClick={isClickable ? (e) => { e.stopPropagation(); onWorkerClick(task.agent_id); } : undefined}
     >
       <div className="flex items-center justify-between mb-2">
         <div className="flex items-center gap-2">

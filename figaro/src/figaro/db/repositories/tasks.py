@@ -316,12 +316,14 @@ class TaskRepository:
         self,
         status: str | None = None,
         limit: int | None = None,
+        worker_id: str | None = None,
     ) -> list[TaskModel]:
         """Get all tasks with optional filters.
 
         Args:
             status: Optional status filter (pending, assigned, completed, failed)
             limit: Optional limit on number of results
+            worker_id: Optional worker_id filter
 
         Returns:
             List of TaskModel instances with messages loaded
@@ -331,6 +333,9 @@ class TaskRepository:
         if status:
             status_enum = TaskStatus(status)
             query = query.where(TaskModel.status == status_enum)
+
+        if worker_id:
+            query = query.where(TaskModel.worker_id == worker_id)
 
         query = query.order_by(TaskModel.created_at.desc())
 

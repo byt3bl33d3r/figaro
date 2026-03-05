@@ -1119,10 +1119,11 @@ class NatsService:
         }
 
     async def _api_list_tasks(self, data: dict[str, Any]) -> dict[str, Any]:
-        """List tasks, optionally filtered by status."""
+        """List tasks, optionally filtered by status and/or worker_id."""
         status = data.get("status")
+        worker_id = data.get("worker_id")
         limit = data.get("limit", 50)
-        tasks = await self._task_manager.get_all_tasks(status=status, limit=limit)
+        tasks = await self._task_manager.get_all_tasks(status=status, limit=limit, worker_id=worker_id)
         return {
             "tasks": [
                 {
@@ -1134,6 +1135,8 @@ class NatsService:
                     "worker_id": t.worker_id,
                     "session_id": t.session_id,
                     "messages": t.messages,
+                    "created_at": t.created_at.isoformat() if t.created_at else None,
+                    "completed_at": t.completed_at.isoformat() if t.completed_at else None,
                 }
                 for t in tasks
             ]

@@ -4,9 +4,10 @@ import { KanbanColumn } from './KanbanColumn';
 
 interface KanbanBoardProps {
   onWorkerClick: (workerId: string) => void;
+  onWorkerHistoryClick?: (workerId: string) => void;
 }
 
-export function KanbanBoard({ onWorkerClick }: KanbanBoardProps) {
+export function KanbanBoard({ onWorkerClick, onWorkerHistoryClick }: KanbanBoardProps) {
   const workers = useWorkersStore((state) => state.getWorkersList());
   const supervisors = useSupervisorsStore((state) => state.getSupervisorsList());
 
@@ -30,6 +31,7 @@ export function KanbanBoard({ onWorkerClick }: KanbanBoardProps) {
           agentId={supervisor.id}
           agentType="supervisor"
           status={supervisor.status}
+          onColumnClick={onWorkerHistoryClick}
         />
       ))}
       {workers.map((worker) => (
@@ -40,6 +42,7 @@ export function KanbanBoard({ onWorkerClick }: KanbanBoardProps) {
           status={worker.status}
           agentConnected={worker.agent_connected}
           onWorkerClick={onWorkerClick}
+          onColumnClick={onWorkerHistoryClick}
         />
       ))}
     </div>

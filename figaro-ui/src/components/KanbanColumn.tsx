@@ -9,17 +9,23 @@ interface KanbanColumnProps {
   status: WorkerStatus;
   agentConnected?: boolean;
   onWorkerClick?: (workerId: string) => void;
+  onColumnClick?: (agentId: string) => void;
 }
 
-export function KanbanColumn({ agentId, agentType, status, agentConnected = true, onWorkerClick }: KanbanColumnProps) {
+export function KanbanColumn({ agentId, agentType, status, agentConnected = true, onWorkerClick, onColumnClick }: KanbanColumnProps) {
   const tasks = useTasksStore((state) => state.getTasksByAgentId(agentId));
 
   const typeBadgeStyle = agentType === 'supervisor'
     ? 'bg-purple-500/20 text-purple-400 border-purple-500/50'
     : 'bg-blue-500/20 text-blue-400 border-blue-500/50';
 
+  const isClickable = !!onColumnClick;
+
   return (
-    <div className={`min-w-[280px] flex flex-col bg-cctv-panel rounded-lg border border-cctv-border ${!agentConnected ? 'opacity-50 grayscale' : ''}`}>
+    <div
+      className={`min-w-[280px] flex flex-col bg-cctv-panel rounded-lg border border-cctv-border ${!agentConnected ? 'opacity-50 grayscale' : ''} ${isClickable ? 'cursor-pointer hover:border-cctv-accent/50' : ''}`}
+      onClick={isClickable ? () => onColumnClick(agentId) : undefined}
+    >
       {/* Header */}
       <div className="p-3 border-b border-cctv-border">
         <div className="flex items-center justify-between mb-2">

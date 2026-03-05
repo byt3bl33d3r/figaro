@@ -268,3 +268,46 @@ class TestTaskRepository:
         await db_session.commit()
         assert completed.status == TaskStatus.COMPLETED
         assert completed.result == {"output": "Done!"}
+
+    async def test_list_all_with_worker_id_filter(self, repo, db_session):
+        """Test listing tasks filtered by worker_id."""
+        task1 = await repo.create(prompt="Task for worker-1")
+        task2 = await repo.create(prompt="Task for worker-2")
+        task3 = await repo.create(prompt="Another task for worker-1")
+        await db_session.commit()
+
+        await repo.assign(task1.task_id, "worker-1")
+        await repo.assign(task2.task_id, "worker-2")
+        await repo.assign(task3.task_id, "worker-1")
+        await db_session.commit()
+
+        results = await repo.list_all(worker_id="worker-1")
+        assert len(results) == 2
+        task_ids = {t.task_id for t in results}
+        assert task1.task_id in task_ids
+        assert task3.task_id in task_ids
+
+    async def test_list_all_with_worker_id_no_match(self, repo, db_session):
+        """Test listing tasks with worker_id that has no tasks."""
+        await repo.create(prompt="Task 1")
+        await db_session.commit()
+
+        results = await repo.list_all(worker_id="nonexistent-worker")
+        assert len(results) == 0
+
+    async def test_list_all_with_worker_id_and_status(self, repo, db_session):
+        """Test listing tasks filtered by both worker_id and status."""
+        task1 = await repo.create(prompt="Task 1")
+        task2 = await repo.create(prompt="Task 2")
+        await db_session.commit()
+
+        await repo.assign(task1.task_id, "worker-1")
+        await repo.assign(task2.task_id, "worker-1")
+        await db_session.commit()
+
+        await repo.complete(task1.task_id, {"done": True})
+        await db_session.commit()
+
+        results = await repo.list_all(worker_id="worker-1", status="completed")
+        assert len(results) == 1
+        assert results[0].task_id == task1.task_id

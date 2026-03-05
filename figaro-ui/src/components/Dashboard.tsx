@@ -9,11 +9,13 @@ import { DesktopModal } from './DesktopModal';
 import { HelpRequestNotification } from './HelpRequestNotification';
 import { HelpRequestModal } from './HelpRequestModal';
 import { KanbanBoard } from './KanbanBoard';
+import { TaskHistoryModal } from './TaskHistoryModal';
 
 export function Dashboard() {
   const { status } = useNats();
   const workerCount = useWorkersStore((state) => state.workers.size);
   const [selectedWorkerId, setSelectedWorkerId] = useState<string | null>(null);
+  const [workerHistoryId, setWorkerHistoryId] = useState<string | null>(null);
   const [viewMode, setViewMode] = useState<'grid' | 'board'>('grid');
   const activeRequestId = useHelpRequestsStore((state) => state.activeRequestId);
   const setActiveRequestId = useHelpRequestsStore((state) => state.setActiveRequestId);
@@ -24,6 +26,10 @@ export function Dashboard() {
 
   const handleCloseModal = useCallback(() => {
     setSelectedWorkerId(null);
+  }, []);
+
+  const handleWorkerHistoryClick = useCallback((workerId: string) => {
+    setWorkerHistoryId(workerId);
   }, []);
 
   return (
@@ -64,7 +70,7 @@ export function Dashboard() {
           {viewMode === 'grid' ? (
             <DesktopGrid onWorkerClick={handleWorkerClick} />
           ) : (
-            <KanbanBoard onWorkerClick={handleWorkerClick} />
+            <KanbanBoard onWorkerClick={handleWorkerClick} onWorkerHistoryClick={handleWorkerHistoryClick} />
           )}
         </main>
 
@@ -77,6 +83,14 @@ export function Dashboard() {
         <DesktopModal
           workerId={selectedWorkerId}
           onClose={handleCloseModal}
+        />
+      )}
+
+      {/* Task History Modal */}
+      {workerHistoryId && (
+        <TaskHistoryModal
+          workerId={workerHistoryId}
+          onClose={() => setWorkerHistoryId(null)}
         />
       )}
 

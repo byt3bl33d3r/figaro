@@ -204,3 +204,32 @@ class TestTaskManager:
         assert task is not None
         assert task.status == TaskStatus.COMPLETED
         assert task.result == "Done!"
+
+    @pytest.mark.asyncio
+    async def test_get_all_tasks_with_worker_id(self, task_manager: TaskManager):
+        """Test filtering tasks by worker_id in-memory."""
+        task1 = await task_manager.create_task(prompt="Task 1")
+        task2 = await task_manager.create_task(prompt="Task 2")
+        task3 = await task_manager.create_task(prompt="Task 3")
+
+        await task_manager.assign_task(task1.task_id, "worker-1")
+        await task_manager.assign_task(task2.task_id, "worker-2")
+        await task_manager.assign_task(task3.task_id, "worker-1")
+
+        results = await task_manager.get_all_tasks(worker_id="worker-1")
+        assert len(results) == 2
+        assert all(t.worker_id == "worker-1" for t in results)
+
+    @pytest.mark.asyncio
+    async def test_get_all_tasks_with_worker_id_and_status(self, task_manager: TaskManager):
+        """Test filtering tasks by worker_id and status in-memory."""
+        task1 = await task_manager.create_task(prompt="Task 1")
+        task2 = await task_manager.create_task(prompt="Task 2")
+
+        await task_manager.assign_task(task1.task_id, "worker-1")
+        await task_manager.assign_task(task2.task_id, "worker-1")
+        await task_manager.complete_task(task1.task_id, result="done")
+
+        results = await task_manager.get_all_tasks(worker_id="worker-1", status="completed")
+        assert len(results) == 1
+        assert results[0].task_id == task1.task_id
