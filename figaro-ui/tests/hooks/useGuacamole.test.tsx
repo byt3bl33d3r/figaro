@@ -10,15 +10,17 @@ vi.mock('../../src/api/guacamole', () => ({
 // Shared mock state — declared inline so the hoisted vi.mock factory can use vi.fn() directly
 vi.mock('guacamole-common-js', () => {
   const mockDisplayElement = document.createElement('div');
+  const mockDisplay = {
+    getElement: vi.fn(() => mockDisplayElement),
+    getWidth: vi.fn(() => 1024),
+    getHeight: vi.fn(() => 768),
+    scale: vi.fn(),
+    onresize: null as ((width: number, height: number) => void) | null,
+  };
   const mockClient = {
     connect: vi.fn(),
     disconnect: vi.fn(),
-    getDisplay: vi.fn(() => ({
-      getElement: vi.fn(() => mockDisplayElement),
-      getWidth: vi.fn(() => 1024),
-      getHeight: vi.fn(() => 768),
-      scale: vi.fn(),
-    })),
+    getDisplay: vi.fn(() => mockDisplay),
     sendMouseState: vi.fn(),
     sendKeyEvent: vi.fn(),
     onstatechange: null as ((state: number) => void) | null,
@@ -41,6 +43,8 @@ vi.mock('guacamole-common-js', () => {
       })),
       // Expose for test access
       __mockClient: mockClient,
+      __mockDisplay: mockDisplay,
+      __mockDisplayElement: mockDisplayElement,
     },
   };
 });
@@ -59,6 +63,14 @@ const mockGuacamole = Guacamole as unknown as {
     onstatechange: ((state: number) => void) | null;
     onerror: ((status: { code: number; message?: string }) => void) | null;
   };
+  __mockDisplay: {
+    getElement: ReturnType<typeof vi.fn>;
+    getWidth: ReturnType<typeof vi.fn>;
+    getHeight: ReturnType<typeof vi.fn>;
+    scale: ReturnType<typeof vi.fn>;
+    onresize: ((width: number, height: number) => void) | null;
+  };
+  __mockDisplayElement: HTMLDivElement;
 };
 
 describe('useGuacamole', () => {
@@ -66,6 +78,7 @@ describe('useGuacamole', () => {
     vi.clearAllMocks();
     mockGuacamole.__mockClient.onstatechange = null;
     mockGuacamole.__mockClient.onerror = null;
+    mockGuacamole.__mockDisplay.onresize = null;
   });
 
   afterEach(() => {
@@ -284,6 +297,77 @@ describe('useGuacamole', () => {
       expect(mockKeyboard.onkeydown).toBeNull();
       expect(mockKeyboard.onkeyup).toBeNull();
       expect(mockKeyboard.reset).toHaveBeenCalled();
+    });
+  });
+
+  describe('display scaling', () => {
+    it('should rescale when remote display resizes', async () => {
+      const container = document.createElement('div');
+      Object.defineProperty(container, 'clientWidth', { value: 800, configurable: true });
+      Object.defineProperty(container, 'clientHeight', { value: 600, configurable: true });
+
+      const { result, rerender } = renderHook(
+        ({ workerId }) => useGuacamole({ workerId }),
+        { initialProps: { workerId: undefined as string | undefined } }
+      );
+
+      Object.defineProperty(result.current.containerRef, 'current', {
+        value: container,
+        writable: true,
+      });
+
+      rerender({ workerId: 'worker-1' });
+
+      await waitFor(() => {
+        expect(mockGuacamole.Client).toHaveBeenCalled();
+      });
+
+      // Simulate connected (state 3)
+      act(() => {
+        mockGuacamole.__mockClient.onstatechange?.(3);
+      });
+
+      // onresize handler should have been set on the display
+      expect(mockGuacamole.__mockDisplay.onresize).toBeTypeOf('function');
+
+      // Clear scale calls from initial connect
+      mockGuacamole.__mockDisplay.scale.mockClear();
+
+      // Simulate remote display resize
+      act(() => {
+        mockGuacamole.__mockDisplay.onresize?.(1920, 1080);
+      });
+
+      // scale() should have been called again to fit the new resolution
+      expect(mockGuacamole.__mockDisplay.scale).toHaveBeenCalled();
+    });
+
+    it('should center display element with margin auto', async () => {
+      const container = document.createElement('div');
+
+      const { result, rerender } = renderHook(
+        ({ workerId }) => useGuacamole({ workerId }),
+        { initialProps: { workerId: undefined as string | undefined } }
+      );
+
+      Object.defineProperty(result.current.containerRef, 'current', {
+        value: container,
+        writable: true,
+      });
+
+      rerender({ workerId: 'worker-1' });
+
+      await waitFor(() => {
+        expect(mockGuacamole.Client).toHaveBeenCalled();
+      });
+
+      // Simulate connected (state 3)
+      act(() => {
+        mockGuacamole.__mockClient.onstatechange?.(3);
+      });
+
+      // Display element should have centering margin
+      expect(mockGuacamole.__mockDisplayElement.style.margin).toBe('0px auto');
     });
   });
 

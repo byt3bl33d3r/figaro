@@ -140,9 +140,18 @@ export function useGuacamole(options: UseGuacamoleOptions): UseGuacamoleReturn {
               while (containerRef.current.firstChild) {
                 containerRef.current.removeChild(containerRef.current.firstChild);
               }
-              const displayElement = client.getDisplay().getElement();
+              const display = client.getDisplay();
+              const displayElement = display.getElement();
+              displayElement.style.margin = '0 auto';
               containerRef.current.appendChild(displayElement);
               updateScale(client, containerRef.current);
+
+              // Rescale when the remote desktop resizes
+              display.onresize = () => {
+                if (containerRef.current && clientRef.current) {
+                  updateScale(clientRef.current, containerRef.current);
+                }
+              };
 
               // Set up input handlers if not viewOnly
               if (!viewOnly) {

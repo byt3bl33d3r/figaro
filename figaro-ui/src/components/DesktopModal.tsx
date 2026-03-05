@@ -65,7 +65,7 @@ export function DesktopModal({ workerId, onClose }: DesktopModalProps) {
       className="fixed inset-0 z-50 bg-black/90 flex items-center justify-center p-4"
       onClick={handleBackdropClick}
     >
-      <div className="w-full max-w-7xl h-full max-h-[90vh] bg-cctv-panel rounded-lg overflow-hidden flex flex-col">
+      <div className="w-full max-w-[95vw] h-full max-h-[95vh] bg-cctv-panel rounded-lg overflow-hidden flex flex-col">
         {/* Header */}
         <div className="flex items-center justify-between px-4 py-3 bg-cctv-bg border-b border-cctv-border">
           <div className="flex items-center gap-3">

@@ -26,7 +26,7 @@ export function VNCViewer({
     <div className={`relative ${className}`}>
       <div
         ref={containerRef}
-        className="vnc-container w-full h-full bg-black"
+        className="vnc-container w-full h-full bg-black overflow-hidden flex items-center justify-center"
       />
       {!connected && (
         <div className="absolute inset-0 flex items-center justify-center bg-cctv-bg/80">
