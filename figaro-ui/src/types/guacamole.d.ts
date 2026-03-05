@@ -24,6 +24,7 @@ declare module 'guacamole-common-js' {
       getWidth(): number;
       getHeight(): number;
       scale(scale: number): void;
+      getScale(): number;
       onresize: ((width: number, height: number) => void) | null;
     }
 

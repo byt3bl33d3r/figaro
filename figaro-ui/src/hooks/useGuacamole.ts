@@ -156,9 +156,22 @@ export function useGuacamole(options: UseGuacamoleOptions): UseGuacamoleReturn {
               // Set up input handlers if not viewOnly
               if (!viewOnly) {
                 const mouse = new Guacamole.Mouse(displayElement);
-                mouse.onmousedown = (state) => client.sendMouseState(state);
-                mouse.onmouseup = (state) => client.sendMouseState(state);
-                mouse.onmousemove = (state) => client.sendMouseState(state);
+                const scaleMouse = (state: Guacamole.Mouse.State) => {
+                  const scale = display.getScale();
+                  const scaled: Guacamole.Mouse.State = {
+                    x: state.x / scale,
+                    y: state.y / scale,
+                    left: state.left,
+                    middle: state.middle,
+                    right: state.right,
+                    up: state.up,
+                    down: state.down,
+                  };
+                  client.sendMouseState(scaled);
+                };
+                mouse.onmousedown = scaleMouse;
+                mouse.onmouseup = scaleMouse;
+                mouse.onmousemove = scaleMouse;
 
                 const keyboard = new Guacamole.Keyboard(document);
                 keyboardRef.current = keyboard;

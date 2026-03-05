@@ -66,6 +66,8 @@ services:
     depends_on:
       nats:
         condition: service_healthy
+      orchestrator:
+        condition: service_healthy
     env_file:
       - ../.env
     environment:
@@ -88,6 +90,8 @@ services:
       dockerfile: figaro-supervisor/Dockerfile
     depends_on:
       nats:
+        condition: service_healthy
+      orchestrator:
         condition: service_healthy
     environment:
       - SUPERVISOR_NATS_URL=nats://nats:4222
@@ -118,6 +122,8 @@ services:
       dockerfile: figaro-gateway/Dockerfile
     depends_on:
       nats:
+        condition: service_healthy
+      orchestrator:
         condition: service_healthy
     env_file:
       - ../.env

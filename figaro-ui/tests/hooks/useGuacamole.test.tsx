@@ -15,6 +15,7 @@ vi.mock('guacamole-common-js', () => {
     getWidth: vi.fn(() => 1024),
     getHeight: vi.fn(() => 768),
     scale: vi.fn(),
+    getScale: vi.fn(() => 1),
     onresize: null as ((width: number, height: number) => void) | null,
   };
   const mockClient = {
@@ -31,11 +32,14 @@ vi.mock('guacamole-common-js', () => {
     default: {
       WebSocketTunnel: vi.fn(),
       Client: vi.fn(() => mockClient),
-      Mouse: vi.fn(() => ({
-        onmousedown: null,
-        onmouseup: null,
-        onmousemove: null,
-      })),
+      Mouse: vi.fn(() => {
+        const mouse = {
+          onmousedown: null as ((state: any) => void) | null,
+          onmouseup: null as ((state: any) => void) | null,
+          onmousemove: null as ((state: any) => void) | null,
+        };
+        return mouse;
+      }),
       Keyboard: vi.fn(() => ({
         onkeydown: null,
         onkeyup: null,
@@ -55,11 +59,13 @@ import { useGuacamole } from '../../src/hooks/useGuacamole';
 // Access mock internals
 const mockGuacamole = Guacamole as unknown as {
   Client: ReturnType<typeof vi.fn>;
+  Mouse: ReturnType<typeof vi.fn>;
   Keyboard: ReturnType<typeof vi.fn>;
   WebSocketTunnel: ReturnType<typeof vi.fn>;
   __mockClient: {
     connect: ReturnType<typeof vi.fn>;
     disconnect: ReturnType<typeof vi.fn>;
+    sendMouseState: ReturnType<typeof vi.fn>;
     onstatechange: ((state: number) => void) | null;
     onerror: ((status: { code: number; message?: string }) => void) | null;
   };
@@ -68,6 +74,7 @@ const mockGuacamole = Guacamole as unknown as {
     getWidth: ReturnType<typeof vi.fn>;
     getHeight: ReturnType<typeof vi.fn>;
     scale: ReturnType<typeof vi.fn>;
+    getScale: ReturnType<typeof vi.fn>;
     onresize: ((width: number, height: number) => void) | null;
   };
   __mockDisplayElement: HTMLDivElement;
@@ -424,6 +431,112 @@ describe('useGuacamole', () => {
       });
 
       expect(onDisconnect).toHaveBeenCalled();
+    });
+  });
+
+  describe('mouse coordinate scaling', () => {
+    it('should scale mouse coordinates by display scale factor', async () => {
+      const container = document.createElement('div');
+      Object.defineProperty(container, 'clientWidth', { value: 512, configurable: true });
+      Object.defineProperty(container, 'clientHeight', { value: 384, configurable: true });
+
+      const { result, rerender } = renderHook(
+        ({ workerId }) => useGuacamole({ workerId, viewOnly: false }),
+        { initialProps: { workerId: undefined as string | undefined } }
+      );
+
+      Object.defineProperty(result.current.containerRef, 'current', {
+        value: container,
+        writable: true,
+      });
+
+      // Display is 1024x768, container is 512x384 → scale = 0.5
+      mockGuacamole.__mockDisplay.getScale.mockReturnValue(0.5);
+
+      rerender({ workerId: 'worker-1' });
+
+      await waitFor(() => {
+        expect(mockGuacamole.Client).toHaveBeenCalled();
+      });
+
+      // Simulate connected (state 3) — sets up mouse handlers
+      act(() => {
+        mockGuacamole.__mockClient.onstatechange?.(3);
+      });
+
+      // Get the mock Mouse instance
+      const mockMouse = mockGuacamole.Mouse.mock.results[
+        mockGuacamole.Mouse.mock.results.length - 1
+      ].value;
+
+      // Simulate a mouse click at (256, 192) in DOM space
+      // With scale 0.5, this should map to (512, 384) in remote desktop space
+      const mouseState = {
+        x: 256, y: 192,
+        left: true, middle: false, right: false,
+        up: false, down: false,
+      };
+
+      act(() => {
+        mockMouse.onmousedown?.(mouseState);
+      });
+
+      expect(mockGuacamole.__mockClient.sendMouseState).toHaveBeenCalledWith(
+        expect.objectContaining({ x: 512, y: 384 }),
+      );
+    });
+
+    it('should not mutate the original mouse state object', async () => {
+      const container = document.createElement('div');
+      Object.defineProperty(container, 'clientWidth', { value: 512, configurable: true });
+      Object.defineProperty(container, 'clientHeight', { value: 384, configurable: true });
+
+      const { result, rerender } = renderHook(
+        ({ workerId }) => useGuacamole({ workerId, viewOnly: false }),
+        { initialProps: { workerId: undefined as string | undefined } }
+      );
+
+      Object.defineProperty(result.current.containerRef, 'current', {
+        value: container,
+        writable: true,
+      });
+
+      mockGuacamole.__mockDisplay.getScale.mockReturnValue(0.5);
+
+      rerender({ workerId: 'worker-1' });
+
+      await waitFor(() => {
+        expect(mockGuacamole.Client).toHaveBeenCalled();
+      });
+
+      act(() => {
+        mockGuacamole.__mockClient.onstatechange?.(3);
+      });
+
+      const mockMouse = mockGuacamole.Mouse.mock.results[
+        mockGuacamole.Mouse.mock.results.length - 1
+      ].value;
+
+      // Simulate mouse move — the original state must not be mutated
+      // because Guacamole.Mouse uses it internally for position tracking
+      const mouseState = {
+        x: 100, y: 200,
+        left: false, middle: false, right: false,
+        up: false, down: false,
+      };
+
+      act(() => {
+        mockMouse.onmousemove?.(mouseState);
+      });
+
+      // Original state must be unchanged
+      expect(mouseState.x).toBe(100);
+      expect(mouseState.y).toBe(200);
+
+      // The scaled copy should have been sent
+      expect(mockGuacamole.__mockClient.sendMouseState).toHaveBeenCalledWith(
+        expect.objectContaining({ x: 200, y: 400 }),
+      );
     });
   });
 });
