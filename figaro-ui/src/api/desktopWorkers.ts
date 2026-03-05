@@ -35,7 +35,7 @@ export async function updateDesktopWorker(
     new_worker_id: newWorkerId || undefined,
     novnc_url: novncUrl || undefined,
     metadata: metadata || undefined,
-    vnc_username: vncUsername || undefined,
-    vnc_password: vncPassword || undefined,
+    vnc_username: vncUsername ?? null,
+    vnc_password: vncPassword ?? null,
   });
 }

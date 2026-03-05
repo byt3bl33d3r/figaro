@@ -1,4 +1,10 @@
+import secrets
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _generate_key() -> str:
+    return secrets.token_hex(16)
 
 
 class Settings(BaseSettings):
@@ -32,6 +38,10 @@ class Settings(BaseSettings):
     vnc_pool_idle_timeout: int = 60  # Seconds before idle VNC connections are closed
     vnc_pool_sweep_interval: int = 15  # Seconds between pool sweep runs
 
+    # Guacamole settings
+    guacd_host: str = "localhost"
+    guacd_port: int = 4822
+
     # NATS settings
     nats_url: str = "nats://localhost:4222"
     nats_ws_url: str = "ws://localhost:8443"  # For UI config endpoint
@@ -50,7 +60,7 @@ class Settings(BaseSettings):
     desktop_workers: str = "[]"
 
     # Encryption settings
-    encryption_key: str = ""
+    encryption_key: str = _generate_key()
 
     # Self-healing settings
     self_healing_enabled: bool = True  # System-wide default for self-healing

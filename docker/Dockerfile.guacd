@@ -1,0 +1,50 @@
+# Build guacd from source for multi-arch support (official image is amd64-only)
+FROM debian:bookworm-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    autoconf automake build-essential cmake git libtool pkg-config \
+    ca-certificates \
+    libcairo2-dev libjpeg62-turbo-dev libpng-dev \
+    libossp-uuid-dev libavcodec-dev libavformat-dev libavutil-dev libswscale-dev \
+    freerdp2-dev libpango1.0-dev libssh2-1-dev libtelnet-dev \
+    libvncserver-dev libwebsockets-dev libpulse-dev libssl-dev \
+    libvorbis-dev libwebp-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+ARG GUACAMOLE_VERSION=1.6.0
+
+RUN git clone --depth 1 --branch ${GUACAMOLE_VERSION} \
+    https://github.com/apache/guacamole-server.git /src
+
+WORKDIR /src
+RUN autoreconf -fi && \
+    ./configure --with-init-dir=/etc/init.d --enable-allow-freerdp-snapshots \
+        --disable-guacenc --disable-guaclog \
+        CPPFLAGS="-Wno-error" && \
+    make -j"$(nproc)" && \
+    make install
+
+# Runtime image
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libcairo2 libjpeg62-turbo libpng16-16 \
+    libossp-uuid16 libavcodec59 libavformat59 libavutil57 libswscale6 \
+    freerdp2-x11 libpango-1.0-0 libpangocairo-1.0-0 libssh2-1 libtelnet2 \
+    libvncclient1 libwebsockets17 libpulse0 libssl3 \
+    libvorbis0a libvorbisenc2 libwebp7 libwebpdemux2 \
+    ca-certificates netcat-openbsd \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy guacd binary and all guacamole libraries (real files + symlinks)
+COPY --from=builder /usr/local/sbin/guacd /usr/local/sbin/guacd
+COPY --from=builder /usr/local/lib/ /tmp/builder-lib/
+RUN cp -a /tmp/builder-lib/libguac* /usr/local/lib/ && rm -rf /tmp/builder-lib/
+
+RUN ldconfig
+
+RUN useradd -r -m guacd
+USER guacd
+
+EXPOSE 4822
+CMD ["guacd", "-b", "0.0.0.0", "-L", "info", "-f"]

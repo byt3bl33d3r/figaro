@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Figaro is a NATS-based orchestration system for managing Claude agent workers running in containerized desktop environments. Workers execute browser automation tasks via the claude-agent-sdk, with live desktop streaming through noVNC. A supervisor agent handles task optimization and delegation. A channel-agnostic gateway service routes messages to/from external channels (Telegram, etc.) for human-in-the-loop interactions.
+Figaro is a NATS-based orchestration system for managing Claude agent workers running in containerized desktop environments. Workers execute browser automation tasks via the claude-agent-sdk, with live desktop streaming through Apache Guacamole (guacd + guacamole-common-js). A supervisor agent handles task optimization and delegation. A channel-agnostic gateway service routes messages to/from external channels (Telegram, etc.) for human-in-the-loop interactions.
 
-All services communicate via NATS (pub/sub + JetStream for durable task events). The UI connects to NATS via WebSocket (nats.ws) for both real-time events and mutations (request/reply). The only REST endpoints are `GET /api/config` (NATS URL discovery) and `WS /vnc/{worker_id}` (VNC proxy).
+All services communicate via NATS (pub/sub + JetStream for durable task events). The UI connects to NATS via WebSocket (nats.ws) for both real-time events and mutations (request/reply). HTTP endpoints are minimal: `GET /api/config` (NATS URL discovery), `GET /api/guacamole/token` (encrypted connection tokens), and `WS /guacamole/webSocket` (Guacamole WebSocket tunnel via guapy).
 
 ## Long-Running Task Design
 
@@ -85,9 +85,10 @@ npm run test:watch        # Watch mode
 ```
 
 ### Docker (Full Stack)
+Always use both the base and dev overlay compose files:
 ```bash
-docker compose up --build     # Start postgres + nats + orchestrator + workers + supervisor + gateway
-docker compose ps             # Check assigned ports
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up --build
+docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml ps
 ```
 
 ### Database Migrations (figaro/)
@@ -110,11 +111,17 @@ uv run alembic revision --autogenerate -m "description"  # New migration
   ┌────┴────┐ ┌───┴────┐ ┌───┴─────┐ ┌───┴──────────┐ ┌┴───────────┐
   │ Worker  │ │Orchestr│ │Supervis │ │   Gateway    │ │    UI      │
   │  (x N)  │ │  ator  │ │   or    │ │  (channels)  │ │   (SPA)    │
-  └─────────┘ └────────┘ └─────────┘ └──────────────┘ └────────────┘
+  └─────────┘ └───┬────┘ └─────────┘ └──────────────┘ └────────────┘
+                   │
+              ┌────┴────┐
+              │  guacd  │
+              │(Guacam.)│
+              └─────────┘
 ```
 
 - **NATS Server**: Central message broker with JetStream for durable task event streaming
-- **Orchestrator**: NATS-first service (request/reply + pub/sub); manages task lifecycle, worker registry, scheduling. Minimal FastAPI for config endpoint and VNC proxy only
+- **Orchestrator**: NATS-first service (request/reply + pub/sub); manages task lifecycle, worker registry, scheduling. Minimal FastAPI for config endpoint, Guacamole token endpoint, and guapy WebSocket tunnel
+- **guacd**: Apache Guacamole server daemon — proxies VNC/RDP/SSH/telnet connections from the browser. Built from source via `docker/Dockerfile.guacd` for multi-arch support (official image is amd64-only). The orchestrator connects to guacd via the `guapy` Python library
 - **Worker (x N)**: Bun/TypeScript service; executes browser automation via claude-agent-sdk; publishes task events to JetStream
 - **Supervisor**: Claude agent for task optimization/delegation; uses SDK-native custom tools (`@tool` + `create_sdk_mcp_server`) backed by NATS request/reply
 - **Gateway**: Channel-agnostic messaging gateway (Telegram, future: WhatsApp, Slack, etc.)
@@ -178,18 +185,19 @@ figaro.gateway.{channel}.register         # Channel gateway registers availabili
 - `streams.py`: `ensure_streams(js)` creates/updates the TASKS JetStream stream (7-day retention)
 
 ### Figaro Orchestrator (figaro/)
-- `app.py`: FastAPI app factory with lifespan, mounts minimal routers (config + VNC proxy), starts NatsService
+- `app.py`: FastAPI app factory with lifespan, mounts routers (config, guacamole token, VNC proxy) and guapy WebSocket server at `/guacamole`, starts NatsService
 - `services/nats_service.py`: Core NATS integration — subscribes to registration/heartbeat/task events/help requests, publishes task assignments and broadcasts, handles all NATS API request/reply (task CRUD, scheduled tasks, help requests, supervisor tools)
 - `services/registry.py`: In-memory connection registry with heartbeat-based presence detection
 - `services/task_manager.py`: Task queue, assignment, and persistence to PostgreSQL
 - `services/scheduler.py`: Cron-like scheduling for recurring tasks, publishes assignments via NATS. Supports manual trigger via `trigger_scheduled_task()` (executes immediately regardless of enabled state). Supports self-learning mode for automatic prompt optimization
 - `services/help_request.py`: Human-in-the-loop request management with channel-agnostic routing
 - `routes/config.py`: `GET /api/config` — returns NATS WebSocket URL for UI discovery
-- `routes/websocket.py`: `WS /vnc/{worker_id}` — VNC proxy endpoint
+- `routes/guacamole.py`: `GET /api/guacamole/token` — generates encrypted Guacamole connection tokens for workers. Resolves worker connection URL (VNC/RDP/SSH/telnet) from registry, builds connection settings, encrypts via `guapy.crypto.GuacamoleCrypto` with the orchestrator's `encryption_key`
+- `routes/websocket.py`: `WS /vnc/{worker_id}` — VNC proxy endpoint (deprecated, use guacamole instead)
 - `services/vnc_client.py`: Low-level VNC interaction via `asyncvnc` — `vnc_screenshot()`, `vnc_type()`, `vnc_key()`, `vnc_click()`. Used by the `figaro.api.vnc` handler to execute supervisor VNC tool requests against worker desktops
 - `db/models.py`: SQLAlchemy models (TaskModel, ScheduledTaskModel, HelpRequestModel, etc.)
 - `db/repositories/`: Data access layer for each model type
-- `config.py`: Settings via `FIGARO_*` env vars (includes `nats_url`, `nats_ws_url`)
+- `config.py`: Settings via `FIGARO_*` env vars (includes `nats_url`, `nats_ws_url`, `guacd_host`, `guacd_port`, `encryption_key`)
 
 ### Figaro Worker (figaro-worker/) — Bun/TypeScript
 - `src/nats/client.ts`: `NatsClient` — publishes registration, subscribes to task assignments, typed publish methods for task messages/completion/errors via JetStream
@@ -228,17 +236,44 @@ Adding a new channel (e.g. WhatsApp):
 
 ### Figaro UI (figaro-ui/)
 - `api/nats.ts`: `NatsManager` — connects to NATS via WebSocket (nats.ws), subscribes to broadcasts + JetStream task events, provides `request()` method for NATS request/reply mutations
+- `api/guacamole.ts`: `getGuacamoleToken()` fetches encrypted token from orchestrator, `getGuacamoleWsUrl()` builds the guapy WebSocket URL
 - `api/scheduledTasks.ts`: Scheduled task CRUD + trigger functions using NATS request/reply
+- `hooks/useGuacamole.ts`: React hook wrapping `guacamole-common-js` — manages Guacamole client lifecycle, auto-reconnect with exponential backoff, display scaling via ResizeObserver, keyboard/mouse input forwarding
 - `hooks/useNats.ts`: React hook for NATS connection, task submission via NATS request/reply
 - `stores/`: Zustand stores for workers, messages, connection, scheduledTasks, helpRequests, supervisors
-- `components/`: Dashboard, DesktopGrid, VNCViewer, ChatInput, EventStream
+- `components/`: Dashboard, DesktopGrid, VNCViewer (uses useGuacamole), ChatInput, EventStream
+- `types/guacamole.d.ts`: TypeScript type declarations for `guacamole-common-js`
 
 ## HTTP Endpoints (Minimal)
 
-All business operations use NATS request/reply. Only two HTTP endpoints remain:
+All business operations use NATS request/reply. HTTP endpoints:
 
 - `GET /api/config` — Returns NATS WebSocket URL for UI discovery (needed before NATS connects)
-- `WS /vnc/{worker_id}` — WebSocket proxy to worker's noVNC (binary streaming)
+- `GET /api/guacamole/token?worker_id=...` — Returns an encrypted Guacamole connection token. Resolves the worker's connection URL from the registry, detects the protocol (VNC/RDP/SSH/telnet) from the URL scheme, and encrypts connection settings with `GuacamoleCrypto` (AES-256-CBC)
+- `WS /guacamole/webSocket?token=...` — Guacamole WebSocket tunnel served by guapy. Decrypts the token, connects to guacd, and proxies the Guacamole protocol to the browser's `guacamole-common-js` client
+- `WS /vnc/{worker_id}` — Legacy VNC proxy endpoint (deprecated, use guacamole instead)
+
+### Desktop Streaming via Guacamole
+
+Desktop streaming uses Apache Guacamole (replacing the previous noVNC approach):
+
+1. UI calls `GET /api/guacamole/token?worker_id=...` to get an encrypted connection token
+2. UI opens a WebSocket to `/guacamole/webSocket?token=...` using `guacamole-common-js`
+3. The guapy server (mounted in the orchestrator) decrypts the token and connects to guacd
+4. guacd connects to the worker's VNC server (or RDP/SSH/telnet based on URL scheme)
+5. The Guacamole protocol streams the desktop to the browser
+
+**Key libraries:**
+- `guapy` (Python): Guacamole WebSocket server + crypto for FastAPI, used by orchestrator
+- `guacamole-common-js` (JS): Browser client library, used by UI via `useGuacamole` hook
+- `guacd`: Apache Guacamole server daemon, built from source (`docker/Dockerfile.guacd`) for multi-arch support
+
+**Protocol detection:** The `novnc_url` field on worker connections is parsed to detect the protocol — `vnc://` → VNC, `rdp://` → RDP, `ssh://` → SSH, `telnet://` → telnet, `ws://`/`wss://` → VNC (legacy noVNC URLs).
+
+### Docker Dev Files
+
+- `docker/Dockerfile.guacd`: Multi-arch guacd build from source (Guacamole 1.6.0)
+- `docker/Dockerfile.test-target`: Lightweight Alpine container with SSH + telnet for testing non-VNC protocols
 
 ## Testing
 
@@ -297,6 +332,9 @@ shellcheck <file>.sh     # Lint (required)
 | `WORKER_NOVNC_URL` | Worker | External noVNC URL for UI |
 | `FIGARO_SELF_HEALING_ENABLED` | Orchestrator | Enable automatic task retry on failure (default: true) |
 | `FIGARO_SELF_HEALING_MAX_RETRIES` | Orchestrator | Max healing retries per task chain (default: 2) |
+| `FIGARO_GUACD_HOST` | Orchestrator | Guacamole daemon hostname (default: localhost) |
+| `FIGARO_GUACD_PORT` | Orchestrator | Guacamole daemon port (default: 4822) |
+| `FIGARO_ENCRYPTION_KEY` | Orchestrator | AES-256-CBC key for Guacamole tokens (auto-generated if not set) |
 | `FIGARO_VNC_PASSWORD` | Orchestrator | VNC password for worker desktops (default: none) |
 | `FIGARO_VNC_PORT` | Orchestrator | VNC display port on workers (default: 5901) |
 | `SUPERVISOR_NATS_URL` | Supervisor | NATS server URL |

@@ -122,9 +122,9 @@ class Registry:
             if novnc_url is not None:
                 conn.novnc_url = novnc_url
             if vnc_username is not None:
-                conn.vnc_username = vnc_username
+                conn.vnc_username = vnc_username or None
             if vnc_password is not None:
-                conn.vnc_password = vnc_password
+                conn.vnc_password = vnc_password or None
             if metadata is not None:
                 conn.metadata = metadata
             if new_client_id is not None and new_client_id != client_id:

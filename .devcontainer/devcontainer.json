@@ -8,10 +8,10 @@
 	"build": { "dockerfile": "Dockerfile" },
 	"features": {
 		"ghcr.io/devcontainers/features/desktop-lite:1": {},
+		"ghcr.io/devcontainers/features/node:1": {},
 		"ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
-			"moby": false // Required for Debian Trixie
-		},
-		"ghcr.io/devcontainers/features/node:1": {}
+			"moby": false 
+		}
 	},
 
     "customizations": {
@@ -39,10 +39,10 @@
 	// "features": {},
 
 	// Use 'forwardPorts' to make a list of ports inside the container available locally.
-	// "forwardPorts": [],
+	//"forwardPorts": [],
 
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "curl -fsSL https://bun.com/install; npm install -g @playwright/cli@latest; sudo chown -R vscode:vscode ~/.claude && curl -fsSL https://claude.ai/install.sh | bash; curl -LsSf https://astral.sh/uv/install.sh | sh"
+	"postCreateCommand": "curl -fsSL https://bun.com/install | bash; npm install -g @playwright/cli@latest; sudo chown -R vscode:vscode ~/.claude && curl -fsSL https://claude.ai/install.sh | bash; curl -LsSf https://astral.sh/uv/install.sh | sh"
 
 	// Configure tool-specific properties.
 	// "customizations": {},

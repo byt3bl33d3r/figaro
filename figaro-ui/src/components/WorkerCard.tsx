@@ -1,7 +1,6 @@
 import type { Worker } from '../types';
 import { VNCViewer } from './VNCViewer';
 import { WorkerStatusBadge, AgentBadge } from './StatusBadge';
-import { getVncProxyUrl } from '../api/vnc';
 
 interface WorkerCardProps {
   worker: Worker;
@@ -24,7 +23,7 @@ export function WorkerCard({ worker, onClick, onContextMenu }: WorkerCardProps) 
       {/* VNC Preview */}
       <div className="relative aspect-video bg-black">
         <VNCViewer
-          url={getVncProxyUrl(worker.id)}
+          workerId={worker.id}
           viewOnly={true}
           className="w-full h-full"
         />

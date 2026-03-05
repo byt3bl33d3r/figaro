@@ -1,0 +1,12 @@
+FROM alpine:3.21
+
+RUN apk add --no-cache openssh-server busybox-extras && \
+    ssh-keygen -A && \
+    adduser -D -s /bin/sh testuser && \
+    echo "testuser:testpass" | chpasswd && \
+    sed -i 's/^#PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config && \
+    sed -i 's/^#PasswordAuthentication.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
+
+EXPOSE 22 23
+
+CMD /usr/sbin/sshd && telnetd -F -l /bin/login

@@ -337,7 +337,7 @@ ensure_encryption_key() {
             die "openssl is required to generate FIGARO_ENCRYPTION_KEY. Install it and re-run."
         fi
         info "Generating FIGARO_ENCRYPTION_KEY..."
-        env_set "FIGARO_ENCRYPTION_KEY" "$(openssl rand -base64 32)"
+        env_set "FIGARO_ENCRYPTION_KEY" "$(openssl rand -hex 16)"
     fi
 }
 

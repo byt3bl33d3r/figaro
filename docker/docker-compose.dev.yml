@@ -23,3 +23,15 @@ services:
     shm_size: '1gb'
     security_opt:
       - seccomp:seccomp_profile.json
+
+  test-target:
+    build:
+      context: .
+      dockerfile: Dockerfile.test-target
+    networks:
+      - figaro-net
+    healthcheck:
+      test: ["CMD-SHELL", "nc -z localhost 22 && nc -z localhost 23"]
+      interval: 5s
+      timeout: 3s
+      retries: 5

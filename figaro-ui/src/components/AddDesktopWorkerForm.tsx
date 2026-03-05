@@ -129,7 +129,7 @@ export function AddDesktopWorkerForm({ onClose, worker }: AddDesktopWorkerFormPr
               className="w-full bg-cctv-bg border border-cctv-border rounded px-3 py-2 text-sm text-cctv-text placeholder-cctv-text-dim focus:outline-none focus:border-cctv-accent"
             />
             <span className="text-[10px] text-cctv-text-dim mt-0.5 block">
-              vnc:// (direct TCP) or ws:// (WebSocket) — credentials extracted automatically
+              vnc://, rdp://, ssh://, telnet://, ws://, wss:// — credentials extracted automatically
             </span>
           </div>
 

@@ -96,10 +96,10 @@ class DesktopWorkerRepository:
             return await self.create(
                 worker_id=new_worker_id,
                 novnc_url=novnc_url if novnc_url is not None else existing.novnc_url,
-                vnc_username=vnc_username
+                vnc_username=(vnc_username or None)
                 if vnc_username is not None
                 else existing.vnc_username,
-                vnc_password=vnc_password
+                vnc_password=(vnc_password or None)
                 if vnc_password is not None
                 else existing.vnc_password,
                 metadata=metadata if metadata is not None else existing.metadata_,
@@ -112,9 +112,9 @@ class DesktopWorkerRepository:
         if novnc_url is not None:
             existing.novnc_url = novnc_url
         if vnc_username is not None:
-            existing.vnc_username = vnc_username
+            existing.vnc_username = vnc_username or None
         if vnc_password is not None:
-            existing.vnc_password = vnc_password
+            existing.vnc_password = vnc_password or None
         if metadata is not None:
             existing.metadata_ = metadata
         existing.updated_at = datetime.now(timezone.utc)

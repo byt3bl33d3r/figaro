@@ -82,7 +82,7 @@ By default the install script uses the `prod-local` overlay, Figaro will be avai
 cp .env.example .env
 
 # Generate an encryption key for VNC password storage (required)
-echo "FIGARO_ENCRYPTION_KEY=$(openssl rand -base64 32)" >> .env
+echo "FIGARO_ENCRYPTION_KEY=$(openssl rand -hex 16)" >> .env
 
 # Optional: set an OPENAPI_API_KEY
 # OPENAI_API_KEY=sk-proj-example

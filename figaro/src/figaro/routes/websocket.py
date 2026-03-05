@@ -15,6 +15,10 @@ async def vnc_proxy_endpoint(
     registry: RegistryWsDep,
     settings: SettingsWsDep,
 ) -> None:
-    """Proxy VNC WebSocket connection to a worker."""
+    """Proxy VNC WebSocket connection to a worker.
+
+    Deprecated: Use /guacamole WebSocket via guapy instead. This endpoint
+    will be removed in a future release.
+    """
     await websocket.accept()
     await proxy_vnc(websocket, worker_id, registry, settings)

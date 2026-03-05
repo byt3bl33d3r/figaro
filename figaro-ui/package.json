@@ -11,7 +11,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@novnc/novnc": "^1.4.0",
+    "guacamole-common-js": "^1.5.0",
     "nats.ws": "^1.30.3",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

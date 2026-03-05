@@ -37,6 +37,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      guacd:
+        condition: service_healthy
       nats:
         condition: service_healthy
     env_file:
@@ -47,6 +49,7 @@ services:
       - FIGARO_DATABASE_URL=postgresql+asyncpg://figaro:figaro@postgres/figaro
       - FIGARO_NATS_URL=nats://nats:4222
       - FIGARO_NATS_WS_URL=ws://localhost:8443
+      - FIGARO_GUACD_HOST=guacd
     networks:
       - figaro-net
     healthcheck:
@@ -95,6 +98,19 @@ services:
       - figaro-net
     deploy:
       replicas: 2
+
+  guacd:
+    build:
+      context: .
+      dockerfile: Dockerfile.guacd
+    restart: unless-stopped
+    networks:
+      - figaro-net
+    healthcheck:
+      test: ["CMD-SHELL", "pidof guacd"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
 
   gateway:
     build:

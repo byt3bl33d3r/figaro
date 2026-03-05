@@ -1,37 +1,33 @@
-import { useNoVNC } from '../hooks/useNoVNC';
+import { useGuacamole } from '../hooks/useGuacamole';
 
 interface VNCViewerProps {
-  url: string | undefined;
+  workerId: string | undefined;
   viewOnly?: boolean;
   className?: string;
   onConnect?: () => void;
-  onDisconnect?: (clean: boolean) => void;
+  onDisconnect?: () => void;
 }
 
 export function VNCViewer({
-  url,
+  workerId,
   viewOnly = true,
   className = '',
   onConnect,
   onDisconnect,
 }: VNCViewerProps) {
-  const { containerRef, connected, connecting, error } = useNoVNC({
-    url,
+  const { containerRef, connected, connecting, error } = useGuacamole({
+    workerId,
     viewOnly,
-    scaleViewport: true,
     onConnect,
     onDisconnect,
   });
 
   return (
     <div className={`relative ${className}`}>
-      {/* VNC Canvas Container */}
       <div
         ref={containerRef}
         className="vnc-container w-full h-full bg-black"
       />
-
-      {/* Connection Status Overlay */}
       {!connected && (
         <div className="absolute inset-0 flex items-center justify-center bg-cctv-bg/80">
           {connecting ? (
@@ -43,8 +39,8 @@ export function VNCViewer({
               <div className="text-cctv-error mb-2">Connection Error</div>
               <div className="text-cctv-text-dim text-sm">{error}</div>
             </div>
-          ) : !url ? (
-            <div className="text-cctv-text-dim">No VNC URL</div>
+          ) : !workerId ? (
+            <div className="text-cctv-text-dim">No Desktop URL</div>
           ) : (
             <div className="text-cctv-text-dim">Disconnected</div>
           )}

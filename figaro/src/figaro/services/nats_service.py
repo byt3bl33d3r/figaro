@@ -1607,8 +1607,12 @@ class NatsService:
         new_worker_id = data.get("new_worker_id") or None
         novnc_url = data.get("novnc_url") or None
         metadata = data.get("metadata") or None
-        vnc_username = data.get("vnc_username") or None
-        vnc_password = data.get("vnc_password") or None
+        # Distinguish "not provided" (None = no change) from "explicitly cleared" (empty string = clear)
+        _sentinel = object()
+        raw_username = data.get("vnc_username", _sentinel)
+        raw_password = data.get("vnc_password", _sentinel)
+        vnc_username = None if raw_username is _sentinel else (raw_username or "")
+        vnc_password = None if raw_password is _sentinel else (raw_password or "")
         if vnc_password == "***":
             vnc_password = None  # Sentinel means "no change"
 

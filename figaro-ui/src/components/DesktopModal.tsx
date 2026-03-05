@@ -4,7 +4,6 @@ import { useMessagesStore } from '../stores/messages';
 import { VNCViewer } from './VNCViewer';
 import { WorkerStatusBadge, AgentBadge } from './StatusBadge';
 import { EventItem } from './EventItem';
-import { getVncProxyUrl } from '../api/vnc';
 
 interface DesktopModalProps {
   workerId: string;
@@ -95,7 +94,7 @@ export function DesktopModal({ workerId, onClose }: DesktopModalProps) {
           {/* VNC Viewer */}
           <div className="flex-1 bg-black">
             <VNCViewer
-              url={getVncProxyUrl(worker.id)}
+              workerId={worker.id}
               viewOnly={false}
               className="w-full h-full"
             />

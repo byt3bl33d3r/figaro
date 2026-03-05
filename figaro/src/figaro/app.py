@@ -7,11 +7,15 @@ from typing import AsyncIterator
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncEngine
 
+from guapy import create_server
+from guapy.models import ClientOptions, CryptConfig, GuacdOptions
+
 from figaro.config import Settings
 from figaro.db import create_engine, create_session_factory
 from figaro.db.models import Base
 from figaro.routes import (
     config_router,
+    guacamole_router,
     setup_static_routes,
     websocket_router,
 )
@@ -123,6 +127,14 @@ def create_app() -> FastAPI:
     # Include routers
     orchestrator_app.include_router(websocket_router)
     orchestrator_app.include_router(config_router)
+    orchestrator_app.include_router(guacamole_router)
+
+    # Mount guapy Guacamole WebSocket server
+    guapy_server = create_server(
+        ClientOptions(crypt=CryptConfig(key=settings.encryption_key)),
+        GuacdOptions(host=settings.guacd_host, port=settings.guacd_port),
+    )
+    orchestrator_app.mount("/guacamole", guapy_server.app)
 
     # Serve static files if configured (must be last - catch-all route)
     setup_static_routes(orchestrator_app, settings.static_dir)
