@@ -1,25 +1,43 @@
 import { loadConfig } from "./config";
 import { NatsClient } from "./nats/client";
 import { TaskExecutor } from "./worker/executor";
+import { SupervisorExecutor } from "./supervisor/executor";
+import type { TaskPayload } from "./types";
 
 const config = loadConfig();
+const label = config.mode === "supervisor" ? "supervisor" : "worker";
 
-console.log(`[worker] Starting worker ${config.workerId}`);
-console.log(`[worker] Connecting to NATS at ${config.natsUrl}`);
-console.log(`[worker] VNC URL: ${config.novncUrl}`);
+console.log(`[${label}] Starting ${label} ${config.workerId}`);
+console.log(`[${label}] Connecting to NATS at ${config.natsUrl}`);
+if (config.mode === "worker") {
+  console.log(`[${label}] VNC URL: ${config.novncUrl}`);
+}
 
 const client = new NatsClient({
   natsUrl: config.natsUrl,
   workerId: config.workerId,
-  novncUrl: config.novncUrl,
+  clientType: config.mode,
+  novncUrl: config.mode === "worker" ? config.novncUrl : undefined,
 });
 
-const executor = new TaskExecutor(client, config.model, config.claudeCodePath);
-client.on("task", (payload) => executor.handleTask(payload as import("./types").TaskPayload));
+if (config.mode === "supervisor") {
+  const executor = new SupervisorExecutor(
+    client,
+    config.model,
+    config.maxTurns,
+    config.claudeCodePath,
+  );
+  client.on("task", (payload) => executor.handleTask(payload));
+  client.onStop((taskId) => executor.stopTask(taskId));
+} else {
+  const executor = new TaskExecutor(client, config.model, config.claudeCodePath);
+  client.on("task", (payload) => executor.handleTask(payload as TaskPayload));
+  client.onStop((taskId) => executor.stopTask(taskId));
+}
 
 const connected = await client.connect();
 if (!connected) {
-  console.error("[worker] Failed to connect to NATS, exiting");
+  console.error(`[${label}] Failed to connect to NATS, exiting`);
   process.exit(1);
 }
 
@@ -27,14 +45,14 @@ async function runHeartbeat(interval: number): Promise<void> {
   try {
     await client.sendHeartbeat();
   } catch (e) {
-    console.warn(`[worker] Initial heartbeat failed: ${e}`);
+    console.warn(`[${label}] Initial heartbeat failed: ${e}`);
   }
   while (true) {
     await Bun.sleep(interval * 1000);
     try {
       await client.sendHeartbeat();
     } catch (e) {
-      console.warn(`[worker] Heartbeat failed: ${e}`);
+      console.warn(`[${label}] Heartbeat failed: ${e}`);
     }
   }
 }
@@ -44,7 +62,7 @@ let shuttingDown = false;
 async function shutdown(): Promise<void> {
   if (shuttingDown) return;
   shuttingDown = true;
-  console.log("[worker] Shutting down...");
+  console.log(`[${label}] Shutting down...`);
   await client.close();
   process.exit(0);
 }

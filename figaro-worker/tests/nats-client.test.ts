@@ -46,6 +46,7 @@ mock.module("nats", () => ({
     decode: (data: Uint8Array) => JSON.parse(new TextDecoder().decode(data)),
   }),
   RetentionPolicy: { Limits: 0 },
+  DeliverPolicy: { New: "new" },
 }));
 
 // Now import NatsClient (uses the mocked nats module)
@@ -194,6 +195,15 @@ describe("NatsClient", () => {
       });
       await client.connect();
       expect(mockSubscribe).toHaveBeenCalledWith("figaro.worker.worker-7.task");
+    });
+
+    test("subscribes to worker stop subject after connecting", async () => {
+      const client = new NatsClient({
+        natsUrl: "nats://test:4222",
+        workerId: "worker-7",
+      });
+      await client.connect();
+      expect(mockSubscribe).toHaveBeenCalledWith("figaro.worker.worker-7.stop");
     });
 
     test("publishes registration message after connecting", async () => {
@@ -435,6 +445,147 @@ describe("NatsClient", () => {
         workerId: "worker-1",
       });
       expect(() => client.stop()).not.toThrow();
+    });
+  });
+
+  describe("supervisor mode", () => {
+    test("subscribes to figaro.supervisor.{id}.task instead of worker subject", async () => {
+      const client = new NatsClient({
+        natsUrl: "nats://test:4222",
+        workerId: "sup-1",
+        clientType: "supervisor",
+      });
+      await client.connect();
+      expect(mockSubscribe).toHaveBeenCalledWith("figaro.supervisor.sup-1.task");
+    });
+
+    test("subscribes to figaro.supervisor.{id}.stop subject", async () => {
+      const client = new NatsClient({
+        natsUrl: "nats://test:4222",
+        workerId: "sup-1",
+        clientType: "supervisor",
+      });
+      await client.connect();
+      expect(mockSubscribe).toHaveBeenCalledWith("figaro.supervisor.sup-1.stop");
+    });
+
+    test("registers via figaro.register.supervisor", async () => {
+      const client = new NatsClient({
+        natsUrl: "nats://test:4222",
+        workerId: "sup-1",
+        clientType: "supervisor",
+      });
+      await client.connect();
+      expect(mockRequest).toHaveBeenCalled();
+      const requestCall = mockRequest.mock.calls[0];
+      expect(requestCall[0]).toBe("figaro.register.supervisor");
+    });
+
+    test("heartbeat uses figaro.heartbeat.supervisor.{id}", async () => {
+      const client = new NatsClient({
+        natsUrl: "nats://test:4222",
+        workerId: "sup-1",
+        clientType: "supervisor",
+      });
+      await client.connect();
+      mockPublish.mockClear();
+      await client.sendHeartbeat();
+      const heartbeatCall = mockPublish.mock.calls.find(
+        (c: unknown[]) => c[0] === "figaro.heartbeat.supervisor.sup-1",
+      );
+      expect(heartbeatCall).toBeTruthy();
+    });
+
+    test("heartbeat omits novnc_url for supervisor", async () => {
+      const client = new NatsClient({
+        natsUrl: "nats://test:4222",
+        workerId: "sup-1",
+        clientType: "supervisor",
+      });
+      await client.connect();
+      mockPublish.mockClear();
+      await client.sendHeartbeat();
+      const heartbeatCall = mockPublish.mock.calls.find(
+        (c: unknown[]) => c[0] === "figaro.heartbeat.supervisor.sup-1",
+      );
+      expect(heartbeatCall).toBeTruthy();
+      const decoded = JSON.parse(
+        new TextDecoder().decode(heartbeatCall![1] as Uint8Array),
+      );
+      expect(decoded.novnc_url).toBeUndefined();
+    });
+
+    test("deregister uses figaro.deregister.supervisor.{id}", async () => {
+      const client = new NatsClient({
+        natsUrl: "nats://test:4222",
+        workerId: "sup-1",
+        clientType: "supervisor",
+      });
+      mockIsClosed.mockReturnValue(false);
+      await client.connect();
+      mockPublish.mockClear();
+      await client.close();
+      const deregCall = mockPublish.mock.calls.find(
+        (c: unknown[]) => c[0] === "figaro.deregister.supervisor.sup-1",
+      );
+      expect(deregCall).toBeTruthy();
+    });
+
+    test("connection name is supervisor-{id}", async () => {
+      const client = new NatsClient({
+        natsUrl: "nats://test:4222",
+        workerId: "sup-1",
+        clientType: "supervisor",
+      });
+      await client.connect();
+      expect(mockConnect).toHaveBeenCalledTimes(1);
+      const callArgs = mockConnect.mock.calls[0][0] as Record<string, unknown>;
+      expect(callArgs.name).toBe("supervisor-sup-1");
+    });
+
+    test("clientType accessor returns supervisor", () => {
+      const client = new NatsClient({
+        natsUrl: "nats://test:4222",
+        workerId: "sup-1",
+        clientType: "supervisor",
+      });
+      expect(client.clientType).toBe("supervisor");
+    });
+
+    test("clientType accessor returns worker by default", () => {
+      const client = new NatsClient({
+        natsUrl: "nats://test:4222",
+        workerId: "worker-1",
+      });
+      expect(client.clientType).toBe("worker");
+    });
+
+    test("request() sends request and returns decoded response", async () => {
+      const responseData = { status: "ok", workers: [] };
+      mockRequest.mockImplementationOnce(() =>
+        Promise.resolve({
+          data: new TextEncoder().encode(JSON.stringify(responseData)),
+          headers: null,
+        }),
+      );
+      const client = new NatsClient({
+        natsUrl: "nats://test:4222",
+        workerId: "sup-1",
+        clientType: "supervisor",
+      });
+      await client.connect();
+      mockRequest.mockClear();
+      mockRequest.mockImplementationOnce(() =>
+        Promise.resolve({
+          data: new TextEncoder().encode(JSON.stringify(responseData)),
+          headers: null,
+        }),
+      );
+      const result = await client.request("figaro.api.workers", { filter: "all" });
+      expect(mockRequest).toHaveBeenCalledTimes(1);
+      const callArgs = mockRequest.mock.calls[0];
+      expect(callArgs[0]).toBe("figaro.api.workers");
+      expect(result).toEqual(responseData);
     });
   });
 });

@@ -54,10 +54,9 @@ services:
       - figaro-net
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/config"]
-      interval: 10s
+      interval: 5s
       timeout: 5s
       retries: 3
-      start_period: 10s
 
   worker:
     build:
@@ -87,7 +86,7 @@ services:
   supervisor:
     build:
       context: ..
-      dockerfile: figaro-supervisor/Dockerfile
+      dockerfile: docker/Dockerfile.supervisor
     depends_on:
       nats:
         condition: service_healthy

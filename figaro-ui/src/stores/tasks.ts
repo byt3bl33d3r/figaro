@@ -3,12 +3,14 @@ import type { ActiveTask, TaskStatus } from '../types';
 
 interface TasksState {
   tasks: Map<string, ActiveTask>;
+  seenMessageIds: Record<string, Set<string>>;
 
   // Actions
   setTasks: (tasks: ActiveTask[]) => void;
   addTask: (task: ActiveTask) => void;
   removeTask: (taskId: string) => void;
   updateTaskStatus: (taskId: string, status: TaskStatus) => void;
+  updateTaskCost: (taskId: string, costUsd?: number, inputTokens?: number, outputTokens?: number, messageId?: string) => void;
   clearTasks: () => void;
 
   // Selectors
@@ -17,6 +19,7 @@ interface TasksState {
 
 export const useTasksStore = create<TasksState>((set, get) => ({
   tasks: new Map(),
+  seenMessageIds: {},
 
   setTasks: (tasks) => {
     const tasksMap = new Map(tasks.map((t) => [t.task_id, t]));
@@ -35,7 +38,9 @@ export const useTasksStore = create<TasksState>((set, get) => ({
     set((state) => {
       const newTasks = new Map(state.tasks);
       newTasks.delete(taskId);
-      return { tasks: newTasks };
+      const newSeenMessageIds = { ...state.seenMessageIds };
+      delete newSeenMessageIds[taskId];
+      return { tasks: newTasks, seenMessageIds: newSeenMessageIds };
     });
   },
 
@@ -49,8 +54,41 @@ export const useTasksStore = create<TasksState>((set, get) => ({
     });
   },
 
+  updateTaskCost: (taskId, costUsd, inputTokens, outputTokens, messageId) => {
+    set((state) => {
+      const task = state.tasks.get(taskId);
+      if (!task) return state;
+
+      const updatedTask = { ...task };
+      const newSeenMessageIds = { ...state.seenMessageIds };
+
+      if (costUsd !== undefined) {
+        updatedTask.cost_usd = costUsd;
+      }
+
+      if (inputTokens !== undefined || outputTokens !== undefined) {
+        if (messageId) {
+          if (!newSeenMessageIds[taskId]) {
+            newSeenMessageIds[taskId] = new Set();
+          }
+          if (newSeenMessageIds[taskId].has(messageId)) {
+            return state;
+          }
+          newSeenMessageIds[taskId] = new Set(newSeenMessageIds[taskId]);
+          newSeenMessageIds[taskId].add(messageId);
+        }
+        updatedTask.input_tokens += (inputTokens ?? 0);
+        updatedTask.output_tokens += (outputTokens ?? 0);
+      }
+
+      const newTasks = new Map(state.tasks);
+      newTasks.set(taskId, updatedTask);
+      return { tasks: newTasks, seenMessageIds: newSeenMessageIds };
+    });
+  },
+
   clearTasks: () => {
-    set({ tasks: new Map() });
+    set({ tasks: new Map(), seenMessageIds: {} });
   },
 
   getTasksByAgentId: (agentId) => {

@@ -11,6 +11,14 @@ const ENV_KEYS = [
   "WORKER_NOVNC_URL",
   "WORKER_NOVNC_PORT",
   "WORKER_MODEL",
+  "SUPERVISOR_NATS_URL",
+  "SUPERVISOR_ID",
+  "SUPERVISOR_MODEL",
+  "SUPERVISOR_MAX_TURNS",
+  "SUPERVISOR_DELEGATION_INACTIVITY_TIMEOUT",
+  "SUPERVISOR_HEARTBEAT_INTERVAL",
+  "WORKER_CLAUDE_CODE_PATH",
+  "SUPERVISOR_CLAUDE_CODE_PATH",
 ] as const;
 
 describe("loadConfig", () => {
@@ -111,6 +119,137 @@ describe("loadConfig", () => {
     process.env.WORKER_MODEL = "claude-sonnet-4-20250514";
     const config = await freshLoadConfig();
     expect(config.model).toBe("claude-sonnet-4-20250514");
+  });
+
+  test("WORKER_CLAUDE_CODE_PATH sets claudeCodePath in worker mode", async () => {
+    process.env.WORKER_CLAUDE_CODE_PATH = "/usr/local/bin/claude";
+    const config = await freshLoadConfig();
+    expect(config.claudeCodePath).toBe("/usr/local/bin/claude");
+  });
+
+  test("claudeCodePath defaults to undefined in worker mode", async () => {
+    const config = await freshLoadConfig();
+    expect(config.claudeCodePath).toBeUndefined();
+  });
+
+  test("SUPERVISOR_CLAUDE_CODE_PATH is ignored in worker mode", async () => {
+    process.env.SUPERVISOR_CLAUDE_CODE_PATH = "/usr/local/bin/claude-supervisor";
+    const config = await freshLoadConfig();
+    expect(config.claudeCodePath).toBeUndefined();
+  });
+
+  test("returned config is frozen", async () => {
+    const config = await freshLoadConfig();
+    expect(Object.isFrozen(config)).toBe(true);
+  });
+
+  test("without --supervisor flag, mode is worker", async () => {
+    const config = await freshLoadConfig();
+    expect(config.mode).toBe("worker");
+  });
+
+  test("worker mode config includes maxTurns and delegationInactivityTimeout", async () => {
+    const config = await freshLoadConfig();
+    expect("maxTurns" in config).toBe(true);
+    expect("delegationInactivityTimeout" in config).toBe(true);
+    expect(config.delegationInactivityTimeout).toBe(600);
+  });
+});
+
+describe("loadConfig (supervisor mode)", () => {
+  const originals: Record<string, string | undefined> = {};
+  let originalArgv: string[];
+
+  beforeEach(() => {
+    for (const key of ENV_KEYS) {
+      originals[key] = process.env[key];
+      delete process.env[key];
+    }
+    originalArgv = process.argv;
+    process.argv = [...originalArgv, "--supervisor"];
+  });
+
+  afterEach(() => {
+    process.argv = originalArgv;
+    for (const key of ENV_KEYS) {
+      if (originals[key] !== undefined) {
+        process.env[key] = originals[key];
+      } else {
+        delete process.env[key];
+      }
+    }
+  });
+
+  async function freshLoadConfig() {
+    const mod = await import(`../src/config.ts?t=${Date.now()}-${Math.random()}`);
+    return mod.loadConfig();
+  }
+
+  test("--supervisor flag sets mode to supervisor", async () => {
+    const config = await freshLoadConfig();
+    expect(config.mode).toBe("supervisor");
+  });
+
+  test("supervisor mode reads SUPERVISOR_NATS_URL", async () => {
+    process.env.SUPERVISOR_NATS_URL = "nats://supervisor:5222";
+    const config = await freshLoadConfig();
+    expect(config.natsUrl).toBe("nats://supervisor:5222");
+  });
+
+  test("supervisor mode reads SUPERVISOR_ID", async () => {
+    process.env.SUPERVISOR_ID = "sup-42";
+    const config = await freshLoadConfig();
+    expect(config.workerId).toBe("sup-42");
+  });
+
+  test("supervisor mode falls back to hostname when SUPERVISOR_ID is not set", async () => {
+    const config = await freshLoadConfig();
+    expect(config.workerId).toBe(hostname());
+  });
+
+  test("supervisor mode reads SUPERVISOR_MODEL", async () => {
+    process.env.SUPERVISOR_MODEL = "claude-sonnet-4-20250514";
+    const config = await freshLoadConfig();
+    expect(config.model).toBe("claude-sonnet-4-20250514");
+  });
+
+  test("supervisor mode sets novncUrl to empty string and novncPort to 0", async () => {
+    const config = await freshLoadConfig();
+    expect(config.novncUrl).toBe("");
+    expect(config.novncPort).toBe(0);
+  });
+
+  test("supervisor mode reads SUPERVISOR_MAX_TURNS", async () => {
+    process.env.SUPERVISOR_MAX_TURNS = "25";
+    const config = await freshLoadConfig();
+    expect(config.maxTurns).toBe(25);
+  });
+
+  test("supervisor mode defaults maxTurns to undefined", async () => {
+    const config = await freshLoadConfig();
+    expect(config.maxTurns).toBeUndefined();
+  });
+
+  test("supervisor mode defaults delegationInactivityTimeout to 600", async () => {
+    const config = await freshLoadConfig();
+    expect(config.delegationInactivityTimeout).toBe(600);
+  });
+
+  test("SUPERVISOR_CLAUDE_CODE_PATH sets claudeCodePath in supervisor mode", async () => {
+    process.env.SUPERVISOR_CLAUDE_CODE_PATH = "/usr/local/bin/claude-supervisor";
+    const config = await freshLoadConfig();
+    expect(config.claudeCodePath).toBe("/usr/local/bin/claude-supervisor");
+  });
+
+  test("claudeCodePath defaults to undefined in supervisor mode", async () => {
+    const config = await freshLoadConfig();
+    expect(config.claudeCodePath).toBeUndefined();
+  });
+
+  test("WORKER_CLAUDE_CODE_PATH is ignored in supervisor mode", async () => {
+    process.env.WORKER_CLAUDE_CODE_PATH = "/usr/local/bin/claude-worker";
+    const config = await freshLoadConfig();
+    expect(config.claudeCodePath).toBeUndefined();
   });
 
   test("returned config is frozen", async () => {

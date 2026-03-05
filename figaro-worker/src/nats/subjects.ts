@@ -30,6 +30,14 @@ export const Subjects = {
     return `figaro.supervisor.${supervisorId}.task`;
   },
 
+  workerStop(workerId: string): string {
+    return `figaro.worker.${workerId}.stop`;
+  },
+
+  supervisorStop(supervisorId: string): string {
+    return `figaro.supervisor.${supervisorId}.stop`;
+  },
+
   // Task Events (JetStream TASKS stream - figaro.task.>)
   taskAssigned(taskId: string): string {
     return `figaro.task.${taskId}.assigned`;
@@ -65,6 +73,7 @@ export const Subjects = {
   // Broadcasts (Core NATS)
   BROADCAST_WORKERS: "figaro.broadcast.workers" as const,
   BROADCAST_SUPERVISORS: "figaro.broadcast.supervisors" as const,
+  BROADCAST_TASK_CANCELLED: "figaro.broadcast.task_cancelled" as const,
   BROADCAST_ALL: "figaro.broadcast.>" as const,
 
   // API (NATS request/reply for service-to-service calls)
@@ -86,6 +95,7 @@ export const Subjects = {
   API_HELP_REQUEST_RESPOND: "figaro.api.help-requests.respond" as const,
   API_HELP_REQUEST_DISMISS: "figaro.api.help-requests.dismiss" as const,
   API_VNC: "figaro.api.vnc" as const,
+  API_TASK_STOP: "figaro.api.tasks.stop" as const,
   API_DESKTOP_WORKERS_REGISTER: "figaro.api.desktop-workers.register" as const,
   API_DESKTOP_WORKERS_REMOVE: "figaro.api.desktop-workers.remove" as const,
   API_DESKTOP_WORKERS_UPDATE: "figaro.api.desktop-workers.update" as const,

@@ -19,6 +19,7 @@ class TaskStatus(str, Enum):
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 @dataclass
@@ -269,6 +270,23 @@ class TaskManager:
             task.status = TaskStatus.FAILED
             task.result = {"error": error}
             logger.info(f"Task {task_id} failed: {error}")
+            return task
+
+    async def cancel_task(self, task_id: str, reason: str | None = None) -> Task | None:
+        # Update database first
+        if self._session_factory:
+            async with self._session_factory() as session:
+                repo = TaskRepository(session)
+                await repo.cancel(task_id, reason)
+                await session.commit()
+
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                return None
+            task.status = TaskStatus.CANCELLED
+            task.result = {"reason": reason} if reason else None
+            logger.info(f"Task {task_id} cancelled{f': {reason}' if reason else ''}")
             return task
 
     async def append_message(self, task_id: str, message: dict[str, Any]) -> bool:

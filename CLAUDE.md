@@ -16,7 +16,7 @@ Key principles:
 - **Never use fixed wall-clock timeouts for task execution.** Use inactivity-based timeouts that reset on worker progress. A task actively streaming messages is healthy regardless of how long it's been running.
 - **NATS request/reply timeouts are for API calls, not task lifecycles.** The `request()` timeout (default 10s, UI 30s) covers orchestrator round-trips, NOT how long a task takes. Task progress is tracked via JetStream subscriptions, not request/reply.
 - **JetStream provides durable delivery.** Task events (messages, completion, errors) go through JetStream so they survive reconnections. Core NATS is only for ephemeral operations (registration, heartbeats, API calls).
-- **Supervisor delegation is blocking but progress-aware.** `_wait_for_delegation()` in `tools.py` subscribes to `figaro.task.{id}.message` and resets its inactivity timer on every worker message. The `DELEGATION_INACTIVITY_TIMEOUT` (600s) is a silence detector, not a task duration limit.
+- **Supervisor delegation is blocking but progress-aware.** `waitForDelegation()` in `supervisor/tools.ts` subscribes to `figaro.task.{id}.message` and resets its inactivity timer on every worker message. The `DELEGATION_INACTIVITY_TIMEOUT` (600s) is a silence detector, not a task duration limit.
 - **Help requests have their own timeouts.** Human-in-the-loop requests wait independently (default 300s) and don't affect the task execution timeout.
 
 When adding new features or modifying existing ones, always ask: "What happens if this task runs for 2 hours?" If the answer involves a timeout killing it while it's still making progress, the design is wrong.
@@ -49,19 +49,12 @@ uv run ruff check .       # Lint
 uv run ruff format .      # Format
 ```
 
-### Supervisor (figaro-supervisor/)
-```bash
-cd figaro-supervisor
-uv sync --frozen
-uv run figaro-supervisor  # Start supervisor agent
-uv run pytest             # Run tests
-```
-
 ### Worker (figaro-worker/) — Bun/TypeScript
 ```bash
 cd figaro-worker
 bun install               # Install dependencies
 bun run dev               # Start worker
+bun run dev --supervisor  # Start as supervisor
 bun test                  # Run tests
 bun run build             # Compile to standalone binary
 ```
@@ -122,8 +115,8 @@ uv run alembic revision --autogenerate -m "description"  # New migration
 - **NATS Server**: Central message broker with JetStream for durable task event streaming
 - **Orchestrator**: NATS-first service (request/reply + pub/sub); manages task lifecycle, worker registry, scheduling. Minimal FastAPI for config endpoint, Guacamole token endpoint, and guapy WebSocket tunnel
 - **guacd**: Apache Guacamole server daemon — proxies VNC/RDP/SSH/telnet connections from the browser. Built from source via `docker/Dockerfile.guacd` for multi-arch support (official image is amd64-only). The orchestrator connects to guacd via the `guapy` Python library
-- **Worker (x N)**: Bun/TypeScript service; executes browser automation via claude-agent-sdk; publishes task events to JetStream
-- **Supervisor**: Claude agent for task optimization/delegation; uses SDK-native custom tools (`@tool` + `create_sdk_mcp_server`) backed by NATS request/reply
+- **Worker (x N)**: Bun/TypeScript service; executes browser automation via claude-agent-sdk; publishes task events to JetStream. Also runs as supervisor when started with the `--supervisor` flag
+- **Supervisor**: Same Bun/TypeScript binary as the worker, started with `--supervisor` flag. Handles task optimization/delegation using SDK-native custom tools (`tool()` + `createSdkMcpServer()`) backed by NATS request/reply
 - **Gateway**: Channel-agnostic messaging gateway (Telegram, future: WhatsApp, Slack, etc.)
 - **UI**: React SPA; connects to NATS via WebSocket (nats.ws) for all communication — real-time events via pub/sub, mutations via request/reply
 
@@ -200,26 +193,30 @@ figaro.gateway.{channel}.register         # Channel gateway registers availabili
 - `config.py`: Settings via `FIGARO_*` env vars (includes `nats_url`, `nats_ws_url`, `guacd_host`, `guacd_port`, `encryption_key`)
 
 ### Figaro Worker (figaro-worker/) — Bun/TypeScript
-- `src/nats/client.ts`: `NatsClient` — publishes registration, subscribes to task assignments, typed publish methods for task messages/completion/errors via JetStream
-- `src/nats/subjects.ts`: NATS subject constants
-- `src/nats/streams.ts`: JetStream stream setup
+The worker and supervisor are the same Bun/TypeScript binary. The `--supervisor` flag switches the mode at startup (see `src/config.ts` and `src/index.ts`).
+
+**Worker mode (default):**
 - `src/worker/executor.ts`: Executes tasks using claude-agent-sdk, streams output via JetStream
 - `src/worker/help-request.ts`: Routes AskUserQuestion to orchestrator via NATS
 - `src/worker/prompt-formatter.ts`: Formats task prompts for the agent
 - `src/worker/tools.ts`: Tool definitions for the agent
-- `src/config.ts`: Settings via `WORKER_*` env vars (includes `nats_url`)
+
+**Supervisor mode (`--supervisor`):**
+- `src/supervisor/executor.ts`: Processes tasks using claude-agent-sdk with SDK custom tools, all delegation is blocking (waits for worker result)
+- `src/supervisor/tools.ts`: SDK-native custom tools (`tool()` + `createSdkMcpServer()`) with NATS-backed handlers. A fresh server is created per session to avoid lifecycle issues. Includes delegation tools (delegate_to_worker, list_tasks, etc.) and VNC tools (`take_screenshot`, `type_text`, `press_key`, `click`) for direct interaction with worker desktops. `waitForDelegation()` uses inactivity-based timeout (resets on every worker message) rather than a fixed wall-clock timeout.
+- `src/supervisor/prompt-formatter.ts`: Formats supervisor prompts with system instructions
+- `src/supervisor/hooks.ts`: Claude Code hooks (pre_tool_use, post_tool_use, stop)
+
+**Shared:**
+- `src/nats/client.ts`: `NatsClient` — publishes registration, subscribes to task assignments, typed publish methods for task messages/completion/errors via JetStream. Supports both worker and supervisor `clientType`
+- `src/nats/subjects.ts`: NATS subject constants
+- `src/nats/streams.ts`: JetStream stream setup
+- `src/shared/serialize.ts`: Message serialization shared between worker and supervisor
+- `src/config.ts`: Settings via `WORKER_*` env vars (worker mode) or `SUPERVISOR_*` env vars (supervisor mode)
 - `src/types.ts`: TypeScript type definitions
 
-### Figaro Worker Legacy (figaro-worker-legacy/) — Python (deprecated)
-The original Python worker implementation, kept for reference. Use the Bun/TypeScript worker above for active development.
-
-### Figaro Supervisor (figaro-supervisor/)
-- `supervisor/client.py`: `SupervisorNatsClient` — same pattern as worker client but for supervisor subjects, includes `subscribe_task_complete()` for monitoring delegated tasks
-- `supervisor/tools.py`: SDK-native custom tools (`@tool` + `create_sdk_mcp_server`) with NATS-backed handlers — passed directly to `ClaudeAgentOptions.mcp_servers`. A fresh server is created per session to avoid lifecycle issues. Includes delegation tools (delegate_to_worker, list_tasks, etc.) and VNC tools (`take_screenshot`, `type_text`, `press_key`, `click`) for direct interaction with worker desktops. `_wait_for_delegation()` is a module-level function that uses inactivity-based timeout (resets on every worker message) rather than a fixed wall-clock timeout.
-- `supervisor/processor.py`: Processes tasks using claude-agent-sdk with SDK custom tools, all delegation is blocking (waits for worker result)
-- `supervisor/help_request.py`: Routes help requests via NATS
-- `hooks/`: Claude Code hooks (pre_tool_use, post_tool_use, stop)
-- `config.py`: Settings via `SUPERVISOR_*` env vars (includes `nats_url`)
+### Legacy Implementations (legacy/)
+The original Python supervisor (`legacy/figaro-supervisor/`) and Python worker (`legacy/figaro-worker/`) implementations, kept for reference. Use the Bun/TypeScript worker above for active development.
 
 ### Figaro Gateway (figaro-gateway/)
 - `core/channel.py`: `Channel` protocol — interface for communication channels (start, stop, send_message, ask_question, on_message)
@@ -285,7 +282,7 @@ Tests use pytest-asyncio with SQLite in-memory for database tests. NATS connecti
 
 **Worker fixtures** (`figaro-worker/tests/`): Bun test mocks for NATS client and executor.
 
-**Supervisor fixtures**: Mock `SupervisorNatsClient` with AsyncMock publish methods.
+**Supervisor fixtures** (`figaro-worker/tests/`): Bun test mocks for NatsClient in supervisor mode and SupervisorExecutor.
 
 **Gateway fixtures**: Mock `NatsConnection` and `Channel` implementations.
 
@@ -295,7 +292,7 @@ Tests use pytest-asyncio with SQLite in-memory for database tests. NATS connecti
 
 Always run these checks after modifying code:
 
-**Python (figaro/, figaro-supervisor/, figaro-gateway/, figaro-nats/):**
+**Python (figaro/, figaro-gateway/, figaro-nats/):**
 ```bash
 uv run ruff check .      # Linting (required)
 uv run pytest            # Tests (required)
@@ -337,7 +334,12 @@ shellcheck <file>.sh     # Lint (required)
 | `FIGARO_ENCRYPTION_KEY` | Orchestrator | AES-256-CBC key for Guacamole tokens (auto-generated if not set) |
 | `FIGARO_VNC_PASSWORD` | Orchestrator | VNC password for worker desktops (default: none) |
 | `FIGARO_VNC_PORT` | Orchestrator | VNC display port on workers (default: 5901) |
-| `SUPERVISOR_NATS_URL` | Supervisor | NATS server URL |
+| `SUPERVISOR_NATS_URL` | Worker (supervisor mode) | NATS server URL |
+| `SUPERVISOR_ID` | Worker (supervisor mode) | Unique supervisor identifier |
+| `SUPERVISOR_MODEL` | Worker (supervisor mode) | Claude model to use (default: claude-opus-4-6) |
+| `SUPERVISOR_CLAUDE_CODE_PATH` | Worker (supervisor mode) | Path to Claude Code CLI binary |
+| `SUPERVISOR_MAX_TURNS` | Worker (supervisor mode) | Max conversation turns |
+| `SUPERVISOR_DELEGATION_INACTIVITY_TIMEOUT` | Worker (supervisor mode) | Inactivity timeout for delegated tasks in seconds (default: 600) |
 | `GATEWAY_NATS_URL` | Gateway | NATS server URL |
 | `GATEWAY_TELEGRAM_BOT_TOKEN` | Gateway | Telegram bot token |
 | `GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS` | Gateway | Allowed Telegram chat IDs (JSON array) |

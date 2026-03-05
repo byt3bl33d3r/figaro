@@ -234,7 +234,6 @@ source = { editable = "." }
 dependencies = [
     { name = "claude-agent-sdk" },
     { name = "figaro-nats" },
-    { name = "httpx" },
     { name = "pydantic-settings" },
 ]
 
@@ -251,7 +250,6 @@ dev = [
 requires-dist = [
     { name = "claude-agent-sdk", specifier = ">=0.1.44" },
     { name = "figaro-nats", editable = "../figaro-nats" },
-    { name = "httpx", specifier = ">=0.28.0" },
     { name = "pydantic-settings", specifier = ">=2.7.0" },
 ]
 

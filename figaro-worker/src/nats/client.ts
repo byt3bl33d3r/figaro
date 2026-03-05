@@ -1,7 +1,7 @@
 /**
- * Worker NATS client for publishing events and receiving task assignments.
+ * NATS client for publishing events and receiving task assignments.
  *
- * Ported from figaro-worker/src/figaro_worker/worker/client.py
+ * Supports both worker and supervisor modes via the `clientType` constructor option.
  */
 
 import {
@@ -9,7 +9,9 @@ import {
   type NatsConnection,
   type Subscription,
   type JetStreamClient,
+  type JetStreamSubscription,
   JSONCodec,
+  DeliverPolicy,
 } from "nats";
 import os from "node:os";
 
@@ -24,7 +26,8 @@ const codec = JSONCodec<JsonData>();
 
 export class NatsClient {
   private natsUrl: string;
-  private workerId: string;
+  private clientId: string;
+  private _clientType: "worker" | "supervisor";
   private capabilities: string[];
   private novncUrl: string | null;
   private nc: NatsConnection | null = null;
@@ -32,15 +35,19 @@ export class NatsClient {
   private handlers: Map<string, EventHandler[]> = new Map();
   private running = false;
   private subscriptions: Subscription[] = [];
+  private stopHandler: ((taskId: string) => boolean) | null = null;
+  private _status = "idle";
 
   constructor(opts: {
     natsUrl: string;
     workerId: string;
+    clientType?: "worker" | "supervisor";
     capabilities?: string[];
     novncUrl?: string | null;
   }) {
     this.natsUrl = opts.natsUrl;
-    this.workerId = opts.workerId;
+    this.clientId = opts.workerId;
+    this._clientType = opts.clientType ?? "worker";
     this.capabilities = opts.capabilities ?? [];
     this.novncUrl = opts.novncUrl ?? null;
   }
@@ -56,7 +63,11 @@ export class NatsClient {
   }
 
   get id(): string {
-    return this.workerId;
+    return this.clientId;
+  }
+
+  get clientType(): "worker" | "supervisor" {
+    return this._clientType;
   }
 
   get isConnected(): boolean {
@@ -64,6 +75,11 @@ export class NatsClient {
   }
 
   // ---- Event emitter ----
+
+  /** Register a handler for stop-task messages. */
+  onStop(handler: (taskId: string) => boolean): void {
+    this.stopHandler = handler;
+  }
 
   /** Register an event handler (e.g. "task"). */
   on(event: string, handler: EventHandler): void {
@@ -83,6 +99,26 @@ export class NatsClient {
     }
   }
 
+  // ---- Derived subjects ----
+
+  private get connectionName(): string {
+    return `${this._clientType}-${this.clientId}`;
+  }
+
+  private get taskSubject(): string {
+    if (this._clientType === "supervisor") {
+      return Subjects.supervisorTask(this.clientId);
+    }
+    return Subjects.workerTask(this.clientId);
+  }
+
+  private get registerSubject(): string {
+    if (this._clientType === "supervisor") {
+      return Subjects.REGISTER_SUPERVISOR;
+    }
+    return Subjects.REGISTER_WORKER;
+  }
+
   // ---- Connection lifecycle ----
 
   /** Connect to NATS, ensure JetStream streams, subscribe, and register. */
@@ -90,7 +126,7 @@ export class NatsClient {
     try {
       this.nc = await connect({
         servers: [this.natsUrl],
-        name: `worker-${this.workerId}`,
+        name: this.connectionName,
         maxReconnectAttempts: -1,
         reconnectTimeWait: 2_000,
       });
@@ -109,24 +145,59 @@ export class NatsClient {
     }
   }
 
+  private get stopSubject(): string {
+    if (this._clientType === "supervisor") {
+      return Subjects.supervisorStop(this.clientId);
+    }
+    return Subjects.workerStop(this.clientId);
+  }
+
   private async setupSubscriptions(): Promise<void> {
     // Task assignments via Core NATS
-    const sub = this.nc!.subscribe(Subjects.workerTask(this.workerId));
+    const sub = this.nc!.subscribe(this.taskSubject);
     this.subscriptions.push(sub);
 
     // Process incoming messages in the background
     this.processSubscription(sub);
+
+    // Stop task subscription
+    const stopSub = this.nc!.subscribe(this.stopSubject);
+    this.subscriptions.push(stopSub);
+    this.processStopSubscription(stopSub);
+  }
+
+  private processStopSubscription(sub: Subscription): void {
+    (async () => {
+      for await (const msg of sub) {
+        try {
+          const data = codec.decode(msg.data);
+          const taskId = data.task_id as string;
+          if (taskId && this.stopHandler) {
+            const stopped = this.stopHandler(taskId);
+            console.log(`[nats-client] Stop request for task ${taskId}: ${stopped ? "stopped" : "not found"}`);
+          }
+        } catch (err) {
+          console.error("[nats-client] Error processing stop message:", err);
+        }
+      }
+    })();
   }
 
   /**
    * Iterate over a subscription's messages in the background.
    * Each message is decoded and emitted as a "task" event.
+   *
+   * For supervisors, the message is acknowledged via request/reply before
+   * emitting so the orchestrator can detect dead supervisors.
    */
   private processSubscription(sub: Subscription): void {
     (async () => {
       for await (const msg of sub) {
         try {
           const data = codec.decode(msg.data);
+          if (this._clientType === "supervisor") {
+            msg.respond(codec.encode({ status: "ok" }));
+          }
           await this.handleTask(data);
         } catch (err) {
           console.error("[nats-client] Error processing task message:", err);
@@ -136,22 +207,25 @@ export class NatsClient {
   }
 
   private async registerWithRetries(): Promise<void> {
-    const payload = codec.encode({
-      worker_id: this.workerId,
+    const registrationData: JsonData = {
+      worker_id: this.clientId,
       capabilities: this.capabilities,
-      novnc_url: this.novncUrl,
       status: "idle",
       metadata: {
         os: os.platform(),
         hostname: os.hostname(),
       },
-    });
+    };
+    if (this._clientType === "worker") {
+      registrationData.novnc_url = this.novncUrl;
+    }
+    const payload = codec.encode(registrationData);
     for (let attempt = 0; attempt < 15; attempt++) {
       try {
-        await this.nc!.request(Subjects.REGISTER_WORKER, payload, {
+        await this.nc!.request(this.registerSubject, payload, {
           timeout: 2_000,
         });
-        console.log(`[nats-client] Registered worker ${this.workerId}`);
+        console.log(`[nats-client] Registered ${this._clientType} ${this.clientId}`);
         return;
       } catch {
         if (attempt === 0) {
@@ -161,7 +235,7 @@ export class NatsClient {
       }
     }
     console.warn(
-      `[nats-client] Failed to register worker ${this.workerId} after retries`,
+      `[nats-client] Failed to register ${this._clientType} ${this.clientId} after retries`,
     );
   }
 
@@ -177,7 +251,8 @@ export class NatsClient {
       Subjects.taskMessage(taskId),
       codec.encode({
         task_id: taskId,
-        worker_id: this.workerId,
+        worker_id: this.clientId,
+        ...(this._clientType === "supervisor" ? { supervisor_id: this.clientId } : {}),
         ...message,
       }),
     );
@@ -189,7 +264,8 @@ export class NatsClient {
       Subjects.taskComplete(taskId),
       codec.encode({
         task_id: taskId,
-        worker_id: this.workerId,
+        worker_id: this.clientId,
+        ...(this._clientType === "supervisor" ? { supervisor_id: this.clientId } : {}),
         result,
       }),
     );
@@ -201,7 +277,8 @@ export class NatsClient {
       Subjects.taskError(taskId),
       codec.encode({
         task_id: taskId,
-        worker_id: this.workerId,
+        worker_id: this.clientId,
+        ...(this._clientType === "supervisor" ? { supervisor_id: this.clientId } : {}),
         error,
       }),
     );
@@ -220,7 +297,8 @@ export class NatsClient {
       Subjects.HELP_REQUEST,
       codec.encode({
         request_id: requestId,
-        worker_id: this.workerId,
+        worker_id: this.clientId,
+        ...(this._clientType === "supervisor" ? { supervisor_id: this.clientId } : {}),
         task_id: taskId,
         questions,
         timeout_seconds: timeoutSeconds,
@@ -228,12 +306,51 @@ export class NatsClient {
     );
   }
 
-  /** Publish worker status update via heartbeat. */
+  /** Send a NATS request/reply with JSON encode/decode. */
+  async request(
+    subject: string,
+    data: JsonData,
+    timeout: number = 10_000,
+  ): Promise<JsonData> {
+    const response = await this.nc!.request(subject, codec.encode(data), { timeout });
+    return codec.decode(response.data);
+  }
+
+  /** Subscribe to a JetStream subject with an ephemeral push consumer for new messages. */
+  async subscribeJetStream(
+    subject: string,
+    handler: (data: JsonData) => void,
+  ): Promise<{ unsubscribe: () => void }> {
+    const sub: JetStreamSubscription = await this.js!.subscribe(subject, {
+      config: {
+        deliver_policy: DeliverPolicy.New,
+      },
+    });
+    (async () => {
+      for await (const msg of sub) {
+        try {
+          const data = codec.decode(msg.data);
+          handler(data);
+          msg.ack();
+        } catch (err) {
+          console.error(`[nats-client] Error in JetStream handler for ${subject}:`, err);
+        }
+      }
+    })();
+    return {
+      unsubscribe: () => {
+        sub.unsubscribe();
+      },
+    };
+  }
+
+  /** Publish status update via heartbeat. */
   async sendStatus(status: string): Promise<void> {
+    this._status = status;
     this.nc!.publish(
-      Subjects.heartbeat("worker", this.workerId),
+      Subjects.heartbeat(this._clientType, this.clientId),
       codec.encode({
-        client_id: this.workerId,
+        client_id: this.clientId,
         status,
       }),
     );
@@ -241,18 +358,34 @@ export class NatsClient {
 
   /** Publish heartbeat. */
   async sendHeartbeat(): Promise<void> {
+    const payload: JsonData = {
+      client_id: this.clientId,
+      client_type: this._clientType,
+      capabilities: this.capabilities,
+      status: this._status,
+    };
+    if (this._clientType === "worker") {
+      payload.novnc_url = this.novncUrl;
+    }
     this.nc!.publish(
-      Subjects.heartbeat("worker", this.workerId),
-      codec.encode({
-        client_id: this.workerId,
-        client_type: "worker",
-        novnc_url: this.novncUrl,
-        capabilities: this.capabilities,
-      }),
+      Subjects.heartbeat(this._clientType, this.clientId),
+      codec.encode(payload),
     );
   }
 
   // ---- Run loop ----
+
+  /** Unsubscribe and clear all active subscriptions. */
+  private drainSubscriptions(): void {
+    for (const sub of this.subscriptions) {
+      try {
+        sub.unsubscribe();
+      } catch {
+        // ignore — subscription may already be closed
+      }
+    }
+    this.subscriptions = [];
+  }
 
   /** Main run loop -- keeps alive while connected, reconnects if needed. */
   async run(): Promise<void> {
@@ -261,9 +394,11 @@ export class NatsClient {
       if (!this.isConnected) {
         console.warn("[nats-client] NATS disconnected, attempting reconnect...");
         try {
+          // Clean up stale subscriptions from the old connection
+          this.drainSubscriptions();
           this.nc = await connect({
             servers: [this.natsUrl],
-            name: `worker-${this.workerId}`,
+            name: this.connectionName,
             maxReconnectAttempts: -1,
             reconnectTimeWait: 2_000,
           });
@@ -290,9 +425,9 @@ export class NatsClient {
     if (this.nc && !this.nc.isClosed()) {
       // Publish deregistration before draining
       this.nc.publish(
-        Subjects.deregister("worker", this.workerId),
+        Subjects.deregister(this._clientType, this.clientId),
         codec.encode({
-          client_id: this.workerId,
+          client_id: this.clientId,
         }),
       );
       // Flush pending publishes then drain all subscriptions and close

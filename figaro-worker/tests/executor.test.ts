@@ -8,6 +8,7 @@ mock.module("nats", () => ({
     decode: (data: Uint8Array) => JSON.parse(new TextDecoder().decode(data)),
   }),
   RetentionPolicy: { Limits: 0 },
+  DeliverPolicy: { New: "new" },
 }));
 
 // --- Mock claude-agent-sdk ---
@@ -61,6 +62,7 @@ function createMockNatsClient(): NatsClient {
     publishTaskComplete: mock(() => Promise.resolve()),
     publishTaskError: mock(() => Promise.resolve()),
     publishHelpRequest: mock(() => Promise.resolve()),
+    subscribeJetStream: mock(async () => ({ unsubscribe: mock(() => {}) })),
     conn: {
       subscribe: mock(() => ({
         unsubscribe: mock(() => {}),
@@ -538,6 +540,51 @@ describe("TaskExecutor", () => {
     const publishErrorMock = client.publishTaskError as ReturnType<typeof mock>;
     expect(publishErrorMock).toHaveBeenCalledTimes(1);
     expect((publishErrorMock.mock.calls[0] as any[])[1]).toBe("string error");
+  });
+
+  test("stopTask aborts running task and skips error publishing", async () => {
+    // Create a query that hangs until aborted
+    mockQuery.mockImplementationOnce((params: any) => {
+      const abortController = params.options.abortController as AbortController;
+      return {
+        async *[Symbol.asyncIterator]() {
+          yield { type: "assistant", content: "Working..." };
+          // Wait until aborted
+          await new Promise<void>((resolve) => {
+            abortController.signal.addEventListener("abort", () => resolve());
+          });
+          throw new Error("The operation was aborted");
+        },
+        close: mock(() => {}),
+        next: () => Promise.resolve({ done: true, value: undefined }),
+        return: () => Promise.resolve({ done: true, value: undefined }),
+        throw: () => Promise.resolve({ done: true, value: undefined }),
+      };
+    });
+
+    const taskPromise = executor.handleTask({
+      task_id: "task-stop",
+      prompt: "Long running task",
+      options: {},
+    });
+
+    // Give the executor time to start
+    await new Promise((resolve) => setTimeout(resolve, 20));
+
+    // Stop the task
+    const stopped = executor.stopTask("task-stop");
+    expect(stopped).toBe(true);
+
+    await taskPromise;
+
+    // Should NOT have published an error
+    const publishErrorMock = client.publishTaskError as ReturnType<typeof mock>;
+    expect(publishErrorMock).not.toHaveBeenCalled();
+  });
+
+  test("stopTask returns false for unknown task", () => {
+    const result = executor.stopTask("nonexistent-task");
+    expect(result).toBe(false);
   });
 
   test("handleTask calls q.close() even when stream throws", async () => {

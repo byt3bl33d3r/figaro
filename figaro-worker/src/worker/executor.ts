@@ -2,45 +2,14 @@ import {
   query,
   type PermissionResult,
   type PermissionMode,
-  type SDKMessage,
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { NatsClient } from "../nats/client";
 import type { TaskPayload } from "../types";
+import { serializeMessage } from "../shared/serialize";
 import { HelpRequestHandler } from "./help-request";
 import { formatTaskPrompt } from "./prompt-formatter";
 import { createDesktopToolsServer } from "./tools";
-
-// Map TS SDK type names to Python SDK class names expected by the UI
-const TYPE_NAME_MAP: Record<string, string> = {
-  assistant: "AssistantMessage",
-  user: "UserMessage",
-  result: "ResultMessage",
-  system: "SystemMessage",
-};
-
-function serializeMessage(msg: SDKMessage): Record<string, unknown> {
-  const record = msg as unknown as Record<string, unknown>;
-  const sdkType = (record.type as string) ?? "unknown";
-  const result: Record<string, unknown> = {
-    ...record,
-    __type__: TYPE_NAME_MAP[sdkType] ?? sdkType,
-  };
-
-  // TS SDK nests content in message.content for assistant messages,
-  // but the UI expects content at the top level (matching Python SDK)
-  if (sdkType === "assistant" && record.message && typeof record.message === "object") {
-    const apiMessage = record.message as Record<string, unknown>;
-    if (apiMessage.content) {
-      result.content = apiMessage.content;
-    }
-    if (apiMessage.model) {
-      result.model = apiMessage.model;
-    }
-  }
-
-  return result;
-}
 
 export class TaskExecutor {
   private client: NatsClient;
@@ -48,6 +17,7 @@ export class TaskExecutor {
   private claudeCodePath: string | undefined;
   private helpHandler: HelpRequestHandler;
   private currentTaskId: string | null = null;
+  private abortController: AbortController | null = null;
 
   constructor(client: NatsClient, model: string = "claude-opus-4-6", claudeCodePath?: string) {
     this.client = client;
@@ -71,12 +41,26 @@ export class TaskExecutor {
     try {
       await this.executeTask(taskId, prompt, optionsDict);
     } catch (e) {
+      if (this.abortController?.signal.aborted) {
+        console.log(`[executor] Task ${taskId} was stopped`);
+        return;
+      }
       const errMsg = e instanceof Error ? e.message : String(e);
       console.error(`[executor] Task ${taskId} failed: ${errMsg}`);
       await this.client.publishTaskError(taskId, errMsg);
     } finally {
       this.currentTaskId = null;
+      this.abortController = null;
     }
+  }
+
+  stopTask(taskId: string): boolean {
+    if (this.currentTaskId === taskId && this.abortController) {
+      console.log(`[executor] Stopping task ${taskId}`);
+      this.abortController.abort();
+      return true;
+    }
+    return false;
   }
 
   private async executeTask(
@@ -135,6 +119,9 @@ export class TaskExecutor {
 
     const permissionMode = (optionsDict.permission_mode as PermissionMode | undefined) ?? "bypassPermissions";
 
+    this.abortController = new AbortController();
+    const abortController = this.abortController;
+
     const q = query({
       prompt: formattedPrompt,
       options: {
@@ -145,6 +132,7 @@ export class TaskExecutor {
         settingSources: ["user", "project"],
         canUseTool,
         mcpServers: { desktop: desktopTools },
+        abortController,
         ...(this.claudeCodePath ? { pathToClaudeCodeExecutable: this.claudeCodePath } : {}),
       },
     });
@@ -164,6 +152,14 @@ export class TaskExecutor {
       }
     } finally {
       q.close();
+      if (!abortController.signal.aborted) {
+        setTimeout(() => {
+          if (!abortController.signal.aborted) {
+            console.warn(`[executor] [${taskId.slice(0, 8)}] Force-aborting query subprocess`);
+            abortController.abort();
+          }
+        }, 5_000);
+      }
     }
 
     await this.client.publishTaskComplete(taskId, resultMessage);

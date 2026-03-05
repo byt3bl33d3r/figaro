@@ -8,76 +8,71 @@ mock.module("nats", () => ({
     decode: (data: Uint8Array) => JSON.parse(new TextDecoder().decode(data)),
   }),
   RetentionPolicy: { Limits: 0 },
+  DeliverPolicy: { New: "new" },
 }));
 
 import { HelpRequestHandler } from "../src/worker/help-request";
 import type { NatsClient } from "../src/nats/client";
 
-function createMockSubscription(messages: Array<{ data: Uint8Array }> = []) {
-  let unsubscribed = false;
-  return {
-    unsubscribe: mock(() => {
-      unsubscribed = true;
-    }),
-    async *[Symbol.asyncIterator]() {
-      for (const msg of messages) {
-        if (unsubscribed) return;
-        yield msg;
+/**
+ * Create a mock JetStream subscription that calls the handler with provided
+ * data payloads. Returns an object with an unsubscribe mock.
+ */
+function createMockJetStreamSub(
+  dataPayloads: Array<Record<string, unknown>> = [],
+) {
+  const unsubscribeMock = mock(() => {});
+  // subscribeJetStream returns { unsubscribe }. The handler is called for each message.
+  const subscribeFn = mock(
+    async (
+      _subject: string,
+      handler: (data: Record<string, unknown>) => void,
+    ) => {
+      // Deliver messages asynchronously (after publish has been called)
+      for (const payload of dataPayloads) {
+        setTimeout(() => handler(payload), 15);
       }
-      // If no messages matched, hang until unsubscribed (simulating waiting)
-      if (!unsubscribed) {
-        await new Promise<void>((resolve) => {
-          const interval = setInterval(() => {
-            if (unsubscribed) {
-              clearInterval(interval);
-              resolve();
-            }
-          }, 10);
-        });
-      }
+      return { unsubscribe: unsubscribeMock };
     },
-  };
+  );
+  return { subscribeFn, unsubscribeMock };
 }
 
-function createMockClient(
-  subscription?: ReturnType<typeof createMockSubscription>,
-): NatsClient {
-  const sub = subscription ?? createMockSubscription();
+function createMockClient(opts?: {
+  subscribeFn?: ReturnType<typeof createMockJetStreamSub>["subscribeFn"];
+}): NatsClient {
+  const { subscribeFn } = opts ?? createMockJetStreamSub();
   return {
-    conn: {
-      subscribe: mock(() => sub),
-    },
+    subscribeJetStream: subscribeFn,
     publishHelpRequest: mock(() => Promise.resolve()),
     id: "test-worker",
   } as unknown as NatsClient;
 }
 
 describe("HelpRequestHandler", () => {
-  test("requestHelp subscribes to response subject before publishing", async () => {
-    const sub = createMockSubscription();
-    const client = createMockClient(sub);
+  test("requestHelp subscribes via JetStream before publishing", async () => {
+    const { subscribeFn } = createMockJetStreamSub();
+    const client = createMockClient({ subscribeFn });
     const handler = new HelpRequestHandler(client);
 
     // Use a very short timeout so the test finishes quickly
-    const resultPromise = handler.requestHelp(
+    const result = await handler.requestHelp(
       "task-1",
       [{ question: "How?" }],
       null,
       0.01, // 10ms timeout
     );
 
-    // Wait for result (will timeout)
-    const result = await resultPromise;
     expect(result).toBeNull();
 
-    // Verify subscribe was called before publishHelpRequest
-    expect(client.conn.subscribe).toHaveBeenCalled();
+    // Verify subscribeJetStream was called before publishHelpRequest
+    expect(subscribeFn).toHaveBeenCalled();
     expect(client.publishHelpRequest).toHaveBeenCalled();
   });
 
   test("requestHelp publishes help request with correct parameters", async () => {
-    const sub = createMockSubscription();
-    const client = createMockClient(sub);
+    const { subscribeFn } = createMockJetStreamSub();
+    const client = createMockClient({ subscribeFn });
     const handler = new HelpRequestHandler(client);
 
     const questions = [{ question: "What color?" }];
@@ -95,8 +90,8 @@ describe("HelpRequestHandler", () => {
   });
 
   test("requestHelp returns null on timeout", async () => {
-    const sub = createMockSubscription(); // No messages -> timeout
-    const client = createMockClient(sub);
+    const { subscribeFn } = createMockJetStreamSub(); // No messages -> timeout
+    const client = createMockClient({ subscribeFn });
     const handler = new HelpRequestHandler(client);
 
     const result = await handler.requestHelp(
@@ -110,19 +105,16 @@ describe("HelpRequestHandler", () => {
   });
 
   test("requestHelp unsubscribes after completion", async () => {
-    const sub = createMockSubscription();
-    const client = createMockClient(sub);
+    const { subscribeFn, unsubscribeMock } = createMockJetStreamSub();
+    const client = createMockClient({ subscribeFn });
     const handler = new HelpRequestHandler(client);
 
     await handler.requestHelp("task-1", [{ question: "Help?" }], null, 0.01);
 
-    expect(sub.unsubscribe).toHaveBeenCalled();
+    expect(unsubscribeMock).toHaveBeenCalled();
   });
 
   test("requestHelp returns null when response has error", async () => {
-    // We need to supply a message that will match the request_id.
-    // Since requestHelp generates a random UUID, we need a different approach:
-    // provide a message iterator that yields a response with an error for any request_id.
     let capturedRequestId: string | null = null;
 
     const publishMock = mock(
@@ -132,27 +124,28 @@ describe("HelpRequestHandler", () => {
       },
     );
 
-    // Create a subscription that yields an error response after publish
-    const sub = {
-      unsubscribe: mock(() => {}),
-      async *[Symbol.asyncIterator]() {
-        // Wait until publishHelpRequest is called so we know the requestId
-        while (!capturedRequestId) {
-          await new Promise((r) => setTimeout(r, 5));
-        }
-        yield {
-          data: new TextEncoder().encode(
-            JSON.stringify({
+    // subscribeJetStream delivers the error response after a short delay
+    const subscribeFn = mock(
+      async (
+        _subject: string,
+        handler: (data: Record<string, unknown>) => void,
+      ) => {
+        // Wait for publish to capture the requestId, then deliver error response
+        const interval = setInterval(() => {
+          if (capturedRequestId) {
+            clearInterval(interval);
+            handler({
               request_id: capturedRequestId,
               error: "Request dismissed",
-            }),
-          ),
-        };
+            });
+          }
+        }, 5);
+        return { unsubscribe: mock(() => clearInterval(interval)) };
       },
-    };
+    );
 
     const client = {
-      conn: { subscribe: mock(() => sub) },
+      subscribeJetStream: subscribeFn,
       publishHelpRequest: publishMock,
       id: "test-worker",
     } as unknown as NatsClient;
@@ -173,25 +166,26 @@ describe("HelpRequestHandler", () => {
       },
     );
 
-    const sub = {
-      unsubscribe: mock(() => {}),
-      async *[Symbol.asyncIterator]() {
-        while (!capturedRequestId) {
-          await new Promise((r) => setTimeout(r, 5));
-        }
-        yield {
-          data: new TextEncoder().encode(
-            JSON.stringify({
+    const subscribeFn = mock(
+      async (
+        _subject: string,
+        handler: (data: Record<string, unknown>) => void,
+      ) => {
+        const interval = setInterval(() => {
+          if (capturedRequestId) {
+            clearInterval(interval);
+            handler({
               request_id: capturedRequestId,
               answers: { "What color?": "Blue" },
-            }),
-          ),
-        };
+            });
+          }
+        }, 5);
+        return { unsubscribe: mock(() => clearInterval(interval)) };
       },
-    };
+    );
 
     const client = {
-      conn: { subscribe: mock(() => sub) },
+      subscribeJetStream: subscribeFn,
       publishHelpRequest: publishMock,
       id: "test-worker",
     } as unknown as NatsClient;
@@ -208,7 +202,8 @@ describe("HelpRequestHandler", () => {
   });
 
   test("cancelPendingRequests returns 0", () => {
-    const client = createMockClient();
+    const { subscribeFn } = createMockJetStreamSub();
+    const client = createMockClient({ subscribeFn });
     const handler = new HelpRequestHandler(client);
     expect(handler.cancelPendingRequests()).toBe(0);
   });

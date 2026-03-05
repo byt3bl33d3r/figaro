@@ -204,7 +204,8 @@ class NatsManager {
       if (
         subject === "figaro.broadcast.workers" ||
         subject === "figaro.broadcast.supervisors" ||
-        subject === "figaro.broadcast.help_request"
+        subject === "figaro.broadcast.help_request" ||
+        subject === "figaro.broadcast.task_cancelled"
       ) {
         return;
       }
@@ -243,6 +244,26 @@ class NatsManager {
         data: {
           message: `${payload.worker_id} needs help${questionText}`,
         },
+      });
+    });
+
+    // Task cancelled broadcast
+    const taskCancelledSub = this.nc.subscribe("figaro.broadcast.task_cancelled");
+    this.subscriptions.push(taskCancelledSub);
+    this.consumeSubscription(taskCancelledSub, (data) => {
+      const payload = data as { task_id: string; worker_id?: string; supervisor_id?: string };
+      useTasksStore.getState().removeTask(payload.task_id);
+      if (payload.worker_id) {
+        useWorkersStore.getState().updateWorkerStatus(payload.worker_id, "idle");
+      }
+      if (payload.supervisor_id) {
+        useSupervisorsStore.getState().updateSupervisorStatus(payload.supervisor_id, "idle");
+      }
+      useMessagesStore.getState().addEvent({
+        worker_id: payload.worker_id,
+        supervisor_id: payload.supervisor_id,
+        type: "system",
+        data: { message: `Task ${payload.task_id.slice(0, 8)}... cancelled` },
       });
     });
 
@@ -608,6 +629,9 @@ class NatsManager {
             agent_type: "supervisor",
             assigned_at: new Date().toISOString(),
             options: {},
+            cost_usd: 0,
+            input_tokens: 0,
+            output_tokens: 0,
           });
         } else if (payload.worker_id) {
           workersStore.updateWorkerStatus(payload.worker_id, "busy");
@@ -624,6 +648,9 @@ class NatsManager {
             agent_type: "worker",
             assigned_at: new Date().toISOString(),
             options: {},
+            cost_usd: 0,
+            input_tokens: 0,
+            output_tokens: 0,
           });
         }
         break;
@@ -639,6 +666,23 @@ class NatsManager {
           });
         } else {
           messagesStore.addSDKMessage(sdkMessage);
+        }
+
+        // Extract cost data from the SDK message
+        const taskId = sdkMessage.task_id;
+        if (taskId) {
+          if (sdkMessage.total_cost_usd !== undefined) {
+            useTasksStore.getState().updateTaskCost(taskId, sdkMessage.total_cost_usd);
+          }
+          if (sdkMessage.usage && sdkMessage.__type__ === 'AssistantMessage') {
+            useTasksStore.getState().updateTaskCost(
+              taskId,
+              undefined,
+              sdkMessage.usage.input_tokens,
+              sdkMessage.usage.output_tokens,
+              sdkMessage.message_id
+            );
+          }
         }
         break;
       }

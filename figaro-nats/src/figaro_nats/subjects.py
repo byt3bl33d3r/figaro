@@ -29,6 +29,14 @@ class Subjects:
     def supervisor_task(supervisor_id: str) -> str:
         return f"figaro.supervisor.{supervisor_id}.task"
 
+    @staticmethod
+    def worker_stop(worker_id: str) -> str:
+        return f"figaro.worker.{worker_id}.stop"
+
+    @staticmethod
+    def supervisor_stop(supervisor_id: str) -> str:
+        return f"figaro.supervisor.{supervisor_id}.stop"
+
     # Task Events (JetStream TASKS stream - figaro.task.>)
     @staticmethod
     def task_assigned(task_id: str) -> str:
@@ -64,6 +72,7 @@ class Subjects:
     # Broadcasts (Core NATS)
     BROADCAST_WORKERS = "figaro.broadcast.workers"
     BROADCAST_SUPERVISORS = "figaro.broadcast.supervisors"
+    BROADCAST_TASK_CANCELLED = "figaro.broadcast.task_cancelled"
     BROADCAST_ALL = "figaro.broadcast.>"
 
     # API (NATS request/reply for service-to-service calls)
@@ -85,6 +94,7 @@ class Subjects:
     API_HELP_REQUEST_RESPOND = "figaro.api.help-requests.respond"
     API_HELP_REQUEST_DISMISS = "figaro.api.help-requests.dismiss"
     API_VNC = "figaro.api.vnc"
+    API_TASK_STOP = "figaro.api.tasks.stop"
     API_DESKTOP_WORKERS_REGISTER = "figaro.api.desktop-workers.register"
     API_DESKTOP_WORKERS_REMOVE = "figaro.api.desktop-workers.remove"
     API_DESKTOP_WORKERS_UPDATE = "figaro.api.desktop-workers.update"

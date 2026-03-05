@@ -73,6 +73,7 @@ export function TaskStatusBadge({ status }: TaskStatusBadgeProps) {
     running: 'bg-cctv-accent/20 text-cctv-accent border-cctv-accent/50',
     completed: 'bg-cctv-accent/20 text-cctv-accent border-cctv-accent/50',
     failed: 'bg-cctv-error/20 text-cctv-error border-cctv-error/50',
+    cancelled: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50',
   };
 
   return (

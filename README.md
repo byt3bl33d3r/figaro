@@ -112,7 +112,7 @@ docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up 
 
 Open `http://localhost:8000`.
 
-This starts PostgreSQL, NATS (port 8443), the orchestrator (port 8000), 2 workers, 2 supervisors, and the gateway.
+This starts PostgreSQL, NATS (port 8443), the orchestrator (port 8000), 2 workers, 2 supervisors, and the gateway. The supervisor service uses the same `figaro-worker` binary started with the `--supervisor` flag.
 
 ### Scaling
 
@@ -280,15 +280,11 @@ A Claude computer use agent that executes browser automation tasks via the claud
 
 The worker is a standalone service that can run on any machine with a desktop environment. In Docker, it runs inside a containerized Linux desktop (Fluxbox + TigerVNC + Chromium + noVNC) provided by the container image, but it can also run directly on a physical or virtual machine -- see [Connecting External Desktops](#connecting-external-desktops).
 
+The same binary also runs as a **supervisor** when started with the `--supervisor` flag. In supervisor mode, the agent receives complex tasks and delegates them to workers. It can directly observe and interact with any connected desktop via VNC tools -- taking screenshots, typing, clicking, and pressing keys -- without delegating a full task. Uses SDK-native custom tools backed by NATS request/reply for delegation and task management. Supports blocking delegation with inactivity-based timeouts.
+
 **Stack:** Bun (compiled native binary), `@anthropic-ai/claude-agent-sdk`, NATS
 
-A legacy Python-based worker implementation exists in `figaro-worker-legacy/` for reference.
-
-### Supervisor (`figaro-supervisor/`)
-
-A Claude agent that receives complex tasks and delegates them to workers. Can directly observe and interact with any connected desktop via VNC tools -- taking screenshots, typing, clicking, and pressing keys -- without delegating a full task. Uses SDK-native custom tools backed by NATS request/reply for delegation and task management. Supports blocking delegation with inactivity-based timeouts.
-
-**Stack:** Python 3.14, `claude-agent-sdk`, Claude Code CLI
+Legacy Python implementations of both the worker and supervisor exist in `legacy/` for reference.
 
 ### Gateway (`figaro-gateway/`)
 
@@ -338,11 +334,8 @@ cd figaro-nats && uv sync --frozen
 # Orchestrator
 cd figaro && uv sync --frozen
 
-# Worker (Bun)
+# Worker + Supervisor (Bun)
 cd figaro-worker && bun install
-
-# Supervisor
-cd figaro-supervisor && uv sync --frozen
 
 # Gateway
 cd figaro-gateway && uv sync --frozen
@@ -360,8 +353,8 @@ cd figaro && uv run figaro
 # Worker
 cd figaro-worker && bun run dev
 
-# Supervisor
-cd figaro-supervisor && uv run figaro-supervisor
+# Supervisor (same binary, --supervisor flag)
+cd figaro-worker && bun run dev -- --supervisor
 
 # Gateway
 cd figaro-gateway && uv run figaro-gateway
@@ -397,7 +390,12 @@ uv run alembic revision --autogenerate -m "description"  # Create new migration
 | `WORKER_NATS_URL` | Worker | NATS server URL | -- |
 | `WORKER_ID` | Worker | Unique worker identifier | -- |
 | `WORKER_NOVNC_URL` | Worker | External noVNC URL for UI | -- |
-| `SUPERVISOR_NATS_URL` | Supervisor | NATS server URL | -- |
+| `SUPERVISOR_NATS_URL` | Worker (supervisor mode) | NATS server URL | -- |
+| `SUPERVISOR_ID` | Worker (supervisor mode) | Unique supervisor identifier | hostname |
+| `SUPERVISOR_MODEL` | Worker (supervisor mode) | Claude model to use | `claude-opus-4-6` |
+| `SUPERVISOR_CLAUDE_CODE_PATH` | Worker (supervisor mode) | Path to Claude Code CLI binary | -- |
+| `SUPERVISOR_MAX_TURNS` | Worker (supervisor mode) | Max conversation turns | -- |
+| `SUPERVISOR_DELEGATION_INACTIVITY_TIMEOUT` | Worker (supervisor mode) | Inactivity timeout for delegated tasks (seconds) | `600` |
 | `GATEWAY_NATS_URL` | Gateway | NATS server URL | -- |
 | `GATEWAY_TELEGRAM_BOT_TOKEN` | Gateway | Telegram bot token | -- |
 | `GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS` | Gateway | Allowed Telegram chat IDs (JSON array) | -- |
@@ -493,7 +491,6 @@ figaro.gateway.{channel}.question         # Ask question via channel
 ```bash
 cd figaro && uv run pytest              # Orchestrator
 cd figaro-nats && uv run pytest         # Shared library
-cd figaro-supervisor && uv run pytest   # Supervisor
 cd figaro-gateway && uv run pytest      # Gateway
 ```
 

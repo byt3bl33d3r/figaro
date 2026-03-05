@@ -1,20 +1,17 @@
 /**
  * Worker-side help request handler for human-in-the-loop assistance.
  *
- * Subscribes per-request to the specific Core NATS response subject
- * (figaro.help.{request_id}.response) for reliable delivery. JetStream
- * publish also delivers to Core NATS subscribers, so this works with
- * the orchestrator's js_publish without needing a JetStream consumer.
+ * Subscribes per-request to the specific JetStream response subject
+ * (figaro.help.{request_id}.response) via the HELP stream. JetStream
+ * ensures responses survive NATS reconnections during long waits,
+ * matching the Python supervisor's durable subscription approach.
  *
- * Ported from figaro-worker/src/figaro_worker/worker/help_request.py
+ * Ported from figaro-supervisor/src/figaro_supervisor/supervisor/client.py
  */
 
-import { JSONCodec, type Subscription } from "nats";
 import type { NatsClient } from "../nats/client";
 import { Subjects } from "../nats/subjects";
 import type { HelpResponsePayload } from "../types";
-
-const codec = JSONCodec<HelpResponsePayload>();
 
 export class HelpRequestHandler {
   private readonly client: NatsClient;
@@ -26,8 +23,10 @@ export class HelpRequestHandler {
   /**
    * Request human help and wait for a response.
    *
-   * Subscribes to the specific response subject via Core NATS before
+   * Subscribes to the specific response subject via JetStream before
    * sending the request, ensuring no race conditions with delivery.
+   * JetStream subscriptions survive NATS reconnections, so responses
+   * are not lost during transient connection drops.
    *
    * @param taskId - The ID of the current task
    * @param questions - List of questions in AskUserQuestion format
@@ -42,24 +41,28 @@ export class HelpRequestHandler {
     timeoutSeconds: number = 1800,
   ): Promise<Record<string, string> | null> {
     const requestId = crypto.randomUUID();
-
     const subject = Subjects.helpResponse(requestId);
-    const sub: Subscription = this.client.conn.subscribe(subject);
+
+    let settled = false;
+    let settle: (value: HelpResponsePayload | null) => void;
+    const responsePromise = new Promise<HelpResponsePayload | null>((res) => {
+      settle = res;
+    });
+
+    // Subscribe via JetStream (HELP stream covers figaro.help.*.response)
+    // before publishing the request to prevent race conditions.
+    const sub = await this.client.subscribeJetStream(
+      subject,
+      (data: Record<string, unknown>) => {
+        if (settled) return;
+        if (data.request_id === requestId) {
+          settled = true;
+          settle(data as unknown as HelpResponsePayload);
+        }
+      },
+    );
 
     try {
-      // Start listening for the response in the background.
-      // The async iterator will yield messages as they arrive.
-      const responsePromise = (async (): Promise<HelpResponsePayload | null> => {
-        for await (const msg of sub) {
-          const data = codec.decode(msg.data);
-          if (data.request_id === requestId) {
-            return data;
-          }
-        }
-        // Subscription was drained/unsubscribed before a matching message arrived
-        return null;
-      })();
-
       // Publish the help request AFTER subscribing (race condition prevention)
       await this.client.publishHelpRequest(
         requestId,
@@ -70,7 +73,11 @@ export class HelpRequestHandler {
 
       // Race the response against a timeout
       const timeoutPromise = new Promise<null>((resolve) => {
-        setTimeout(() => resolve(null), timeoutSeconds * 1000);
+        const timer = setTimeout(() => resolve(null), timeoutSeconds * 1000);
+        // Allow the timer to not keep the process alive
+        if (typeof timer === "object" && "unref" in timer) {
+          timer.unref();
+        }
       });
 
       const result = await Promise.race([responsePromise, timeoutPromise]);
@@ -86,6 +93,7 @@ export class HelpRequestHandler {
 
       return result.answers ?? null;
     } finally {
+      settled = true;
       sub.unsubscribe();
     }
   }

@@ -353,6 +353,11 @@ class NatsService:
             self._api_update_desktop_worker,
             queue="orchestrator",
         )
+        await conn.subscribe_request(
+            Subjects.API_TASK_STOP,
+            self._api_stop_task,
+            queue="orchestrator",
+        )
 
         logger.info("All NATS subscriptions established")
 
@@ -599,6 +604,13 @@ class NatsService:
         task_id = data.get("task_id")
         error = data.get("error", "Unknown error")
         worker_id = data.get("worker_id")
+
+        # Guard: skip if task was already cancelled (stop task flow handles cleanup)
+        if task_id:
+            task = await self._task_manager.get_task(task_id)
+            if task and task.status == TaskStatus.CANCELLED:
+                logger.debug(f"Skipping error handling for cancelled task {task_id}")
+                return
 
         if task_id:
             await self._task_manager.fail_task(task_id, error)
@@ -1359,6 +1371,76 @@ class NatsService:
             "messages": task.messages,
         }
 
+    async def _api_stop_task(self, data: dict[str, Any]) -> dict[str, Any]:
+        """Stop a running task by sending a stop signal to the agent and cancelling the task."""
+        task_id = data.get("task_id", "")
+        if not task_id:
+            return {"error": "task_id is required"}
+
+        task = await self._task_manager.get_task(task_id)
+        if not task:
+            return {"error": "Task not found"}
+
+        if task.status not in (TaskStatus.ASSIGNED, TaskStatus.RUNNING):
+            return {"error": "Task is not running"}
+
+        agent_id = task.worker_id
+        if not agent_id:
+            return {"error": "Task has no assigned agent"}
+
+        # Determine agent type from registry
+        conn = await self._registry.get_connection(agent_id)
+        agent_type = "worker"
+        if conn and conn.client_type == ClientType.SUPERVISOR:
+            agent_type = "supervisor"
+
+        # Send stop signal to the agent
+        if agent_type == "supervisor":
+            await self.conn.publish(
+                Subjects.supervisor_stop(agent_id), {"task_id": task_id}
+            )
+        else:
+            await self.conn.publish(
+                Subjects.worker_stop(agent_id), {"task_id": task_id}
+            )
+
+        # Cancel the task
+        await self._task_manager.cancel_task(task_id, "Stopped by user")
+
+        # Set agent idle
+        await self._registry.set_worker_status(agent_id, WorkerStatus.IDLE)
+
+        # Broadcast updated lists
+        if agent_type == "supervisor":
+            await self.broadcast_supervisors()
+        else:
+            await self.broadcast_workers()
+
+        # Broadcast task cancelled event
+        await self.conn.publish(
+            Subjects.BROADCAST_TASK_CANCELLED,
+            {
+                "task_id": task_id,
+                "agent_id": agent_id,
+                "agent_type": agent_type,
+            },
+        )
+
+        # Publish task error to JetStream so UI subscribers get notified
+        await self.conn.js_publish(
+            Subjects.task_error(task_id),
+            {
+                "task_id": task_id,
+                "error": "Task cancelled by user",
+                "cancelled": True,
+            },
+        )
+
+        # Process pending queue in case there are queued tasks
+        await self._process_pending_queue()
+
+        return {"success": True, "task_id": task_id}
+
     async def _api_list_help_requests(self, data: dict[str, Any]) -> dict[str, Any]:
         """List all help requests (pending + recent resolved)."""
         requests = await self._help_request_manager.get_all_requests()
@@ -1799,6 +1881,12 @@ Keep the core intent of the original prompt intact while making it more actionab
 
                 # Guard: skip healer and optimizer tasks to prevent loops
                 if task_model.source in ("healer", "optimizer"):
+                    return
+
+                # Guard: skip cancelled tasks
+                task = await self._task_manager.get_task(task_id)
+                if task and task.status == TaskStatus.CANCELLED:
+                    logger.debug(f"Skipping healing for cancelled task {task_id}")
                     return
 
                 # Resolve healing config

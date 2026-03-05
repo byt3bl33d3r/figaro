@@ -26,7 +26,7 @@ export interface Supervisor {
 export type TaskTarget = 'worker' | 'supervisor' | 'auto';
 
 // Task types
-export type TaskStatus = 'pending' | 'assigned' | 'running' | 'completed' | 'failed';
+export type TaskStatus = 'pending' | 'assigned' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export type AgentType = 'worker' | 'supervisor';
 
@@ -38,6 +38,9 @@ export interface ActiveTask {
   agent_type: AgentType;
   assigned_at: string;
   options: Record<string, unknown>;
+  cost_usd: number;
+  input_tokens: number;
+  output_tokens: number;
 }
 
 export interface Task {
@@ -126,6 +129,9 @@ export interface SDKMessage {
   };
   index?: number;
   timestamp?: string;
+  total_cost_usd?: number;
+  usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number; cache_creation_input_tokens?: number };
+  message_id?: string;
 }
 
 export interface ContentBlock {

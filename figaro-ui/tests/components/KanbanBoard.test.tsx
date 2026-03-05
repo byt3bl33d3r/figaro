@@ -34,6 +34,9 @@ const createTask = (
   agent_type: agentType,
   assigned_at: new Date().toISOString(),
   options: {},
+  cost_usd: 0,
+  input_tokens: 0,
+  output_tokens: 0,
 });
 
 describe('KanbanBoard', () => {

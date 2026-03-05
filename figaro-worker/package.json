@@ -6,7 +6,8 @@
     "dev": "bun run src/index.ts",
     "build": "mkdir -p dist && bun build src/index.ts --compile --outfile dist/figaro-worker",
     "test": "bun test",
-    "test:coverage": "bun test --coverage"
+    "test:coverage": "bun test --coverage",
+    "dev:supervisor": "bun run src/index.ts --supervisor"
   },
   "dependencies": {
     "nats": "^2.29.3",

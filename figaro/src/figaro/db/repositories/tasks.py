@@ -232,6 +232,30 @@ class TaskRepository:
         )
         return result.scalar_one_or_none()
 
+    async def cancel(
+        self, task_id: str, reason: str | None = None
+    ) -> TaskModel | None:
+        """Mark a task as cancelled.
+
+        Args:
+            task_id: The task ID to cancel
+            reason: The cancellation reason
+
+        Returns:
+            Updated TaskModel if successful
+        """
+        result = await self.session.execute(
+            update(TaskModel)
+            .where(TaskModel.task_id == task_id)
+            .values(
+                status=TaskStatus.CANCELLED,
+                result={"reason": reason} if reason else None,
+                completed_at=datetime.now(timezone.utc),
+            )
+            .returning(TaskModel)
+        )
+        return result.scalar_one_or_none()
+
     async def append_message(
         self,
         task_id: str,

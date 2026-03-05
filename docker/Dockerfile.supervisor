@@ -1,0 +1,28 @@
+# Stage 1: Build
+FROM oven/bun:1 AS builder
+
+WORKDIR /app
+COPY figaro-worker/package.json figaro-worker/bun.lock* ./
+RUN bun install --frozen-lockfile
+
+COPY figaro-worker/ .
+RUN bun run build
+
+# Stage 2: Runtimed
+FROM debian:bookworm-slim
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends curl ca-certificates unzip && \
+    apt-get clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN useradd -m -s /bin/bash supervisor
+USER supervisor
+RUN curl -fsSL https://claude.ai/install.sh | bash
+
+USER root
+COPY --from=builder /app/dist/figaro-worker /usr/local/bin/figaro-worker
+
+USER supervisor
+ENV SUPERVISOR_CLAUDE_CODE_PATH=/home/supervisor/.local/bin/claude
+CMD ["figaro-worker", "--supervisor"]
