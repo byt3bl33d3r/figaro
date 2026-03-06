@@ -3,6 +3,28 @@ import { useTasksStore } from '../stores/tasks';
 import { WorkerStatusBadge, AgentBadge } from './StatusBadge';
 import { KanbanCard } from './KanbanCard';
 
+function formatTokenCount(tokens: number): string {
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`;
+  if (tokens >= 1_000) return `${(tokens / 1_000).toFixed(1)}k`;
+  return tokens.toString();
+}
+
+function AgentStatsLabel({ agentId }: { agentId: string }) {
+  const stats = useTasksStore((state) => state.getAgentTotalStats(agentId));
+  const totalTokens = stats.input_tokens + stats.output_tokens;
+  if (totalTokens === 0 && stats.cost_usd === 0) return null;
+
+  const parts: string[] = [];
+  if (stats.cost_usd > 0) parts.push(`$${stats.cost_usd.toFixed(2)}`);
+  if (totalTokens > 0) parts.push(`${formatTokenCount(totalTokens)} tok`);
+
+  return (
+    <span className="text-xs text-cctv-text-dim" title={`Input: ${stats.input_tokens.toLocaleString()} | Output: ${stats.output_tokens.toLocaleString()}`}>
+      {parts.join(' / ')}
+    </span>
+  );
+}
+
 interface KanbanColumnProps {
   agentId: string;
   agentType: 'worker' | 'supervisor';
@@ -54,10 +76,11 @@ export function KanbanColumn({ agentId, agentType, status, agentConnected = true
       </div>
 
       {/* Footer */}
-      <div className="px-3 py-2 border-t border-cctv-border">
+      <div className="px-3 py-2 border-t border-cctv-border flex items-center justify-between">
         <span className="text-xs text-cctv-text-dim">
           {tasks.length} task{tasks.length !== 1 ? 's' : ''}
         </span>
+        <AgentStatsLabel agentId={agentId} />
       </div>
     </div>
   );

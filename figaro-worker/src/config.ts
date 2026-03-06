@@ -13,6 +13,26 @@ export interface Config {
   readonly claudeCodePath: string | undefined;
   readonly maxTurns: number | undefined;
   readonly delegationInactivityTimeout: number;
+  readonly loopDetection: {
+    enabled: boolean;
+    windowSize: number;
+    warningThreshold: number;
+    criticalThreshold: number;
+    pingPongWarning: number;
+    pingPongCritical: number;
+  };
+}
+
+function parseLoopDetectionConfig(prefix: string): Config["loopDetection"] {
+  const env = process.env;
+  return {
+    enabled: (env[`${prefix}_LOOP_DETECTION_ENABLED`] ?? "true") !== "false",
+    windowSize: parseInt(env[`${prefix}_LOOP_DETECTION_WINDOW_SIZE`] ?? "30", 10),
+    warningThreshold: parseInt(env[`${prefix}_LOOP_DETECTION_WARNING_THRESHOLD`] ?? "10", 10),
+    criticalThreshold: parseInt(env[`${prefix}_LOOP_DETECTION_CRITICAL_THRESHOLD`] ?? "20", 10),
+    pingPongWarning: parseInt(env[`${prefix}_LOOP_DETECTION_PING_PONG_WARNING`] ?? "6", 10),
+    pingPongCritical: parseInt(env[`${prefix}_LOOP_DETECTION_PING_PONG_CRITICAL`] ?? "12", 10),
+  };
 }
 
 export function loadConfig(): Config {
@@ -51,6 +71,7 @@ export function loadConfig(): Config {
       claudeCodePath,
       maxTurns,
       delegationInactivityTimeout,
+      loopDetection: parseLoopDetectionConfig("SUPERVISOR"),
     });
   }
 
@@ -87,5 +108,6 @@ export function loadConfig(): Config {
     claudeCodePath,
     maxTurns,
     delegationInactivityTimeout,
+    loopDetection: parseLoopDetectionConfig("WORKER"),
   });
 }

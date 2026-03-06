@@ -7,6 +7,7 @@ import {
 import type { NatsClient } from "../nats/client";
 import type { TaskPayload } from "../types";
 import { serializeMessage } from "../shared/serialize";
+import { LoopDetectionSession, buildLoopDetectionHooks, type LoopDetectionConfig } from "../shared/loop-detection";
 import { HelpRequestHandler } from "./help-request";
 import { formatTaskPrompt } from "./prompt-formatter";
 import { createDesktopToolsServer } from "./tools";
@@ -15,14 +16,21 @@ export class TaskExecutor {
   private client: NatsClient;
   private model: string;
   private claudeCodePath: string | undefined;
+  private loopDetection: LoopDetectionConfig | undefined;
   private helpHandler: HelpRequestHandler;
   private currentTaskId: string | null = null;
   private abortController: AbortController | null = null;
 
-  constructor(client: NatsClient, model: string = "claude-opus-4-6", claudeCodePath?: string) {
+  constructor(
+    client: NatsClient,
+    model: string = "claude-opus-4-6",
+    claudeCodePath?: string,
+    loopDetection?: LoopDetectionConfig,
+  ) {
     this.client = client;
     this.model = model;
     this.claudeCodePath = claudeCodePath;
+    this.loopDetection = loopDetection;
     this.helpHandler = new HelpRequestHandler(client);
   }
 
@@ -119,6 +127,13 @@ export class TaskExecutor {
 
     const permissionMode = (optionsDict.permission_mode as PermissionMode | undefined) ?? "bypassPermissions";
 
+    const hooks = this.loopDetection?.enabled
+      ? buildLoopDetectionHooks(
+          new LoopDetectionSession(this.loopDetection),
+          this.loopDetection,
+        )
+      : undefined;
+
     this.abortController = new AbortController();
     const abortController = this.abortController;
 
@@ -134,6 +149,7 @@ export class TaskExecutor {
         mcpServers: { desktop: desktopTools },
         abortController,
         ...(this.claudeCodePath ? { pathToClaudeCodeExecutable: this.claudeCodePath } : {}),
+        ...(hooks ? { hooks } : {}),
       },
     });
 

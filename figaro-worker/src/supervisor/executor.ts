@@ -5,6 +5,7 @@ import {
 } from "@anthropic-ai/claude-agent-sdk";
 
 import type { NatsClient } from "../nats/client";
+import { LoopDetectionSession, buildLoopDetectionHooks, type LoopDetectionConfig } from "../shared/loop-detection";
 import { serializeMessage } from "../shared/serialize";
 import { HelpRequestHandler } from "../worker/help-request";
 import {
@@ -25,6 +26,7 @@ export class SupervisorExecutor {
   private model: string;
   private maxTurns: number | undefined;
   private claudeCodePath: string | undefined;
+  private loopDetection: LoopDetectionConfig | undefined;
   private helpHandler: HelpRequestHandler;
   private sessions: Map<string, TaskSession> = new Map();
   private abortControllers: Map<string, AbortController> = new Map();
@@ -34,11 +36,13 @@ export class SupervisorExecutor {
     model: string = "claude-opus-4-6",
     maxTurns?: number,
     claudeCodePath?: string,
+    loopDetection?: LoopDetectionConfig,
   ) {
     this.client = client;
     this.model = model;
     this.maxTurns = maxTurns;
     this.claudeCodePath = claudeCodePath;
+    this.loopDetection = loopDetection;
     this.helpHandler = new HelpRequestHandler(client);
   }
 
@@ -138,6 +142,13 @@ export class SupervisorExecutor {
 
       const permissionMode = (options.permission_mode as PermissionMode | undefined) ?? "bypassPermissions";
 
+      const hooks = this.loopDetection?.enabled
+        ? buildLoopDetectionHooks(
+            new LoopDetectionSession(this.loopDetection),
+            this.loopDetection,
+          )
+        : undefined;
+
       const abortController = new AbortController();
       this.abortControllers.set(taskId, abortController);
 
@@ -156,6 +167,7 @@ export class SupervisorExecutor {
             console.error(`[supervisor] [${taskId.slice(0, 8)}] stderr: ${data.trimEnd()}`);
           },
           ...(this.claudeCodePath ? { pathToClaudeCodeExecutable: this.claudeCodePath } : {}),
+          ...(hooks ? { hooks } : {}),
         },
       });
 

@@ -26,11 +26,12 @@ if (config.mode === "supervisor") {
     config.model,
     config.maxTurns,
     config.claudeCodePath,
+    config.loopDetection,
   );
   client.on("task", (payload) => executor.handleTask(payload));
   client.onStop((taskId) => executor.stopTask(taskId));
 } else {
-  const executor = new TaskExecutor(client, config.model, config.claudeCodePath);
+  const executor = new TaskExecutor(client, config.model, config.claudeCodePath, config.loopDetection);
   client.on("task", (payload) => executor.handleTask(payload as TaskPayload));
   client.onStop((taskId) => executor.stopTask(taskId));
 }
