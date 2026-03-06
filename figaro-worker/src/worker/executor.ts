@@ -9,9 +9,8 @@ import type { TaskPayload } from "../types";
 import { serializeMessage } from "../shared/serialize";
 import { LoopDetectionSession, buildLoopDetectionHooks, type LoopDetectionConfig } from "../shared/loop-detection";
 import { HelpRequestHandler } from "./help-request";
-import { formatTaskPrompt } from "./prompt-formatter";
+import { formatTaskPrompt, WORKER_SYSTEM_PROMPT } from "./prompt-formatter";
 import { createDesktopToolsServer } from "./tools";
-import { createPythonToolsServer } from "../python/tools";
 
 export class TaskExecutor {
   private client: NatsClient;
@@ -82,8 +81,7 @@ export class TaskExecutor {
     const startUrl = optionsDict.start_url as string | undefined;
     const formattedPrompt = formatTaskPrompt(prompt, startUrl);
 
-    const desktopTools = createDesktopToolsServer();
-    const { server: pythonTools, destroySession } = createPythonToolsServer();
+    const { server: desktopTools, destroySession } = createDesktopToolsServer(this.client);
 
     const canUseTool = async (
       toolName: string,
@@ -142,13 +140,18 @@ export class TaskExecutor {
     const q = query({
       prompt: formattedPrompt,
       options: {
+        systemPrompt: {
+          type: "preset" as const,
+          preset: "claude_code" as const,
+          append: WORKER_SYSTEM_PROMPT,
+        },
         permissionMode,
         allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
         maxTurns: optionsDict.max_turns as number | undefined,
         model: this.model,
         settingSources: ["user", "project"],
         canUseTool,
-        mcpServers: { desktop: desktopTools, python: pythonTools },
+        mcpServers: { desktop: desktopTools },
         abortController,
         ...(this.claudeCodePath ? { pathToClaudeCodeExecutable: this.claudeCodePath } : {}),
         ...(hooks ? { hooks } : {}),

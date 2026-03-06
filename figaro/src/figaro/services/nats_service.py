@@ -1163,22 +1163,27 @@ class NatsService:
         """Search tasks by prompt content."""
         query = data.get("q", "")
         status = data.get("status")
-        tasks = await self._task_manager.search_tasks(query=query, status=status)
-        return {
-            "tasks": [
-                {
-                    "task_id": t.task_id,
-                    "prompt": t.prompt,
-                    "options": t.options,
-                    "status": t.status.value,
-                    "result": t.result,
-                    "worker_id": t.worker_id,
-                    "session_id": t.session_id,
-                    "messages": t.messages,
-                }
-                for t in tasks
-            ]
-        }
+        limit = data.get("limit", 20)
+        offset = data.get("offset", 0)
+        include_messages = data.get("include_messages", False)
+        tasks = await self._task_manager.search_tasks(
+            query=query, status=status, limit=limit, offset=offset, include_messages=include_messages,
+        )
+        task_dicts = []
+        for t in tasks:
+            d = {
+                "task_id": t.task_id,
+                "prompt": t.prompt,
+                "options": t.options,
+                "status": t.status.value,
+                "result": t.result,
+                "worker_id": t.worker_id,
+                "session_id": t.session_id,
+            }
+            if include_messages:
+                d["messages"] = t.messages
+            task_dicts.append(d)
+        return {"tasks": task_dicts}
 
     async def _api_supervisor_status(self, data: dict[str, Any]) -> dict[str, Any]:
         """Get status of all connected supervisors."""

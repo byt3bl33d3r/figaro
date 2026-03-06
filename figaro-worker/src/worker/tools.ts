@@ -9,6 +9,8 @@
 import { createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
 import { createLinuxTools } from "./tools-linux";
 import { createMacosTools } from "./tools-macos";
+import { createPythonExecTool } from "../python/tools";
+import type { NatsClient } from "../nats/client";
 
 export const BUTTON_MAP: Record<string, string> = {
   left: "1",
@@ -42,13 +44,17 @@ export function detectPlatform(): "linux" | "darwin" {
   return process.platform === "darwin" ? "darwin" : "linux";
 }
 
-export function createDesktopToolsServer() {
+export function createDesktopToolsServer(natsClient?: NatsClient) {
   const platform = detectPlatform();
-  const tools = platform === "darwin" ? createMacosTools() : createLinuxTools();
+  const desktopTools = platform === "darwin" ? createMacosTools() : createLinuxTools();
 
-  return createSdkMcpServer({
+  const { pythonExec, destroySession } = createPythonExecTool(natsClient);
+
+  const server = createSdkMcpServer({
     name: "desktop",
     version: "1.0.0",
-    tools,
+    tools: [...desktopTools, pythonExec],
   });
+
+  return { server, destroySession };
 }

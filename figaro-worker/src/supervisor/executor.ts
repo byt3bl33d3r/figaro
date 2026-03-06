@@ -12,7 +12,6 @@ import {
   formatSupervisorPrompt,
   SUPERVISOR_SYSTEM_PROMPT,
 } from "./prompt-formatter";
-import { createPythonToolsServer } from "../python/tools";
 import { createSupervisorToolsServer } from "./tools";
 
 interface TaskSession {
@@ -86,7 +85,12 @@ export class SupervisorExecutor {
 
   private async runSession(session: TaskSession): Promise<void> {
     const { taskId, prompt, options, sourceMetadata } = session;
-    const { server: pythonTools, destroySession } = createPythonToolsServer();
+
+    // Create a fresh MCP server per session to avoid lifecycle issues
+    const { server: toolsServer, destroySession } = createSupervisorToolsServer(
+      this.client,
+      sourceMetadata,
+    );
 
     try {
       // Notify we're busy
@@ -98,12 +102,6 @@ export class SupervisorExecutor {
         options,
         sourceMetadata,
         this.client.id,
-      );
-
-      // Create a fresh MCP server per session to avoid lifecycle issues
-      const toolsServer = createSupervisorToolsServer(
-        this.client,
-        sourceMetadata,
       );
 
       // canUseTool callback: intercept AskUserQuestion, allow everything else
@@ -157,13 +155,18 @@ export class SupervisorExecutor {
       const q = query({
         prompt: formattedPrompt,
         options: {
-          systemPrompt: SUPERVISOR_SYSTEM_PROMPT,
+          systemPrompt: {
+            type: "preset" as const,
+            preset: "claude_code" as const,
+            append: SUPERVISOR_SYSTEM_PROMPT,
+          },
           permissionMode,
           allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
           maxTurns: (options.max_turns as number | undefined) ?? this.maxTurns,
           model: this.model,
           canUseTool,
-          mcpServers: { orchestrator: toolsServer, python: pythonTools },
+          disallowedTools: ["ToolSearch"],
+          mcpServers: { orchestrator: toolsServer },
           abortController,
           stderr: (data: string) => {
             console.error(`[supervisor] [${taskId.slice(0, 8)}] stderr: ${data.trimEnd()}`);

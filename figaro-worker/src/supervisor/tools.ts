@@ -9,6 +9,7 @@ import { JSONCodec } from "nats";
 import { z } from "zod/v4";
 import type { NatsClient } from "../nats/client";
 import { Subjects } from "../nats/subjects";
+import { createPythonExecTool } from "../python/tools";
 
 // biome-ignore lint: JSON payloads are loosely typed
 type JsonData = Record<string, any>;
@@ -144,6 +145,8 @@ export function createSupervisorToolsServer(
   // Track scale factors from screenshots for coordinate scaling
   const _workerScale = new Map<string, [number, number]>();
 
+  const { pythonExec, destroySession: destroyPySession } = createPythonExecTool(client);
+
   async function natsRequest(
     subject: string,
     data: JsonData,
@@ -228,57 +231,6 @@ export function createSupervisorToolsServer(
         }
       }
       return result(resp);
-    },
-  );
-
-  const listTasks = tool(
-    "list_tasks",
-    "Get tasks, optionally filtered by status.",
-    {
-      status: z
-        .string()
-        .optional()
-        .describe("Filter by status (pending, assigned, completed, failed)"),
-      limit: z
-        .number()
-        .int()
-        .optional()
-        .default(50)
-        .describe("Maximum number of tasks to return"),
-    },
-    async (args) => {
-      return result(
-        await natsRequest(Subjects.API_TASKS, {
-          status: args.status,
-          limit: args.limit ?? 50,
-        }),
-      );
-    },
-  );
-
-  const getTask = tool(
-    "get_task",
-    "Get a specific task by ID, including full result and messages.",
-    {
-      task_id: z.string().describe("The task ID to retrieve"),
-    },
-    async (args) => {
-      return result(
-        await natsRequest(Subjects.API_TASK_GET, { task_id: args.task_id }),
-      );
-    },
-  );
-
-  const searchTasks = tool(
-    "search_tasks",
-    "Search tasks by prompt content.",
-    {
-      q: z.string().describe("Search query"),
-    },
-    async (args) => {
-      return result(
-        await natsRequest(Subjects.API_TASK_SEARCH, { q: args.q }),
-      );
     },
   );
 
@@ -746,15 +698,16 @@ export function createSupervisorToolsServer(
     },
   );
 
-  return createSdkMcpServer({
+  function destroySession(): void {
+    destroyPySession();
+  }
+
+  const server = createSdkMcpServer({
     name: "orchestrator",
     version: "1.0.0",
     tools: [
       delegateToWorker,
       listWorkers,
-      listTasks,
-      getTask,
-      searchTasks,
       getSupervisorStatus,
       listScheduledTasks,
       getScheduledTask,
@@ -770,6 +723,9 @@ export function createSupervisorToolsServer(
       sendScreenshot,
       sshRunCommand,
       telnetRunCommand,
+      pythonExec,
     ],
   });
+
+  return { server, destroySession };
 }

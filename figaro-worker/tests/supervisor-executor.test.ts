@@ -168,7 +168,9 @@ describe("SupervisorExecutor", () => {
 
     const queryArgs = (mockQuery.mock.calls[0] as any[])[0];
     expect(queryArgs.options.systemPrompt).toBeTruthy();
-    expect(queryArgs.options.systemPrompt).toContain("task supervisor");
+    expect(queryArgs.options.systemPrompt.type).toBe("preset");
+    expect(queryArgs.options.systemPrompt.preset).toBe("claude_code");
+    expect(queryArgs.options.systemPrompt.append).toContain("task supervisor");
   });
 
   test("handleTask formats prompt with supervisor context", async () => {

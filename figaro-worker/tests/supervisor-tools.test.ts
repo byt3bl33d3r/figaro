@@ -29,6 +29,11 @@ mock.module("@anthropic-ai/claude-agent-sdk", () => ({
 import { waitForDelegation, createSupervisorToolsServer } from "../src/supervisor/tools";
 import type { NatsClient } from "../src/nats/client";
 
+function getServer(client: NatsClient, sourceMetadata?: Record<string, any> | null) {
+  const { server, destroySession } = createSupervisorToolsServer(client, sourceMetadata);
+  return { server: server as any, destroySession };
+}
+
 function createMockClient(overrides: Record<string, any> = {}): NatsClient {
   return {
     id: "test-supervisor",
@@ -171,19 +176,19 @@ describe("waitForDelegation", () => {
 describe("createSupervisorToolsServer", () => {
   test("returns server with name 'orchestrator'", () => {
     const client = createMockClient();
-    const server = createSupervisorToolsServer(client);
+    const { server } = getServer(client);
     expect(server.name).toBe("orchestrator");
   });
 
-  test("creates all 20 tools", () => {
+  test("creates all expected tools", () => {
     const client = createMockClient();
-    const server = createSupervisorToolsServer(client) as any;
-    expect(server.tools.length).toBe(20);
+    const { server } = getServer(client);
+    expect(server.tools.length).toBe(18);
   });
 
   test("tool names match expected set", () => {
     const client = createMockClient();
-    const server = createSupervisorToolsServer(client) as any;
+    const { server } = getServer(client);
     const names = server.tools.map((t: any) => t.name).sort();
     expect(names).toEqual([
       "click",
@@ -192,12 +197,10 @@ describe("createSupervisorToolsServer", () => {
       "delete_scheduled_task",
       "get_scheduled_task",
       "get_supervisor_status",
-      "get_task",
       "list_scheduled_tasks",
-      "list_tasks",
       "list_workers",
       "press_key",
-      "search_tasks",
+      "python_exec",
       "send_screenshot",
       "ssh_run_command",
       "take_screenshot",
@@ -230,7 +233,7 @@ describe("createSupervisorToolsServer", () => {
       }),
     });
 
-    const server = createSupervisorToolsServer(client) as any;
+    const { server } = getServer(client);
     const screenshotTool = server.tools.find((t: any) => t.name === "take_screenshot");
     const clickTool = server.tools.find((t: any) => t.name === "click");
 
@@ -251,7 +254,7 @@ describe("createSupervisorToolsServer", () => {
 
   test("send_screenshot returns error without sourceMetadata", async () => {
     const client = createMockClient();
-    const server = createSupervisorToolsServer(client) as any;
+    const { server } = getServer(client);
     const sendScreenshotTool = server.tools.find(
       (t: any) => t.name === "send_screenshot",
     );
@@ -272,7 +275,7 @@ describe("createSupervisorToolsServer", () => {
       ),
     });
 
-    const server = createSupervisorToolsServer(client) as any;
+    const { server } = getServer(client);
     const sshTool = server.tools.find((t: any) => t.name === "ssh_run_command");
 
     const res = await sshTool.handler({
@@ -303,7 +306,7 @@ describe("createSupervisorToolsServer", () => {
       ),
     });
 
-    const server = createSupervisorToolsServer(client) as any;
+    const { server } = getServer(client);
     const sshTool = server.tools.find((t: any) => t.name === "ssh_run_command");
 
     const res = await sshTool.handler({ worker_id: "w1", command: "ls" });
@@ -318,7 +321,7 @@ describe("createSupervisorToolsServer", () => {
       ),
     });
 
-    const server = createSupervisorToolsServer(client) as any;
+    const { server } = getServer(client);
     const telnetTool = server.tools.find(
       (t: any) => t.name === "telnet_run_command",
     );
@@ -349,7 +352,7 @@ describe("createSupervisorToolsServer", () => {
       ),
     });
 
-    const server = createSupervisorToolsServer(client) as any;
+    const { server } = getServer(client);
     const telnetTool = server.tools.find(
       (t: any) => t.name === "telnet_run_command",
     );
@@ -379,10 +382,10 @@ describe("createSupervisorToolsServer", () => {
       },
     });
 
-    const server = createSupervisorToolsServer(client, {
+    const { server } = getServer(client, {
       channel: "telegram",
       chat_id: "123",
-    }) as any;
+    });
     const sendScreenshotTool = server.tools.find(
       (t: any) => t.name === "send_screenshot",
     );

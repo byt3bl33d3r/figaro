@@ -63,6 +63,10 @@ export class PyodideSession {
     }
   }
 
+  registerJsModule(name: string, module: Record<string, unknown>): void {
+    this.pyodide!.registerJsModule(name, module);
+  }
+
   async destroy(): Promise<void> {
     this.pyodide = null;
   }

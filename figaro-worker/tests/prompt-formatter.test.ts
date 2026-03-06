@@ -1,15 +1,13 @@
 import { describe, test, expect } from "bun:test";
-import { formatTaskPrompt } from "../src/worker/prompt-formatter";
+import { formatTaskPrompt, WORKER_SYSTEM_PROMPT } from "../src/worker/prompt-formatter";
 
 describe("formatTaskPrompt", () => {
-  test("returns prompt with task and instructions blocks", () => {
+  test("returns prompt with task block", () => {
     const result = formatTaskPrompt("Buy groceries");
 
     expect(result).toContain("<task>");
     expect(result).toContain("Buy groceries");
     expect(result).toContain("</task>");
-    expect(result).toContain("<instructions>");
-    expect(result).toContain("</instructions>");
   });
 
   test("includes context block when startUrl is provided", () => {
@@ -21,7 +19,6 @@ describe("formatTaskPrompt", () => {
     expect(result).toContain("<task>");
     expect(result).toContain("Search for items");
     expect(result).toContain("</task>");
-    expect(result).toContain("<instructions>");
   });
 
   test("does not include context block when startUrl is undefined", () => {
@@ -39,13 +36,6 @@ describe("formatTaskPrompt", () => {
     expect(result).not.toContain("</context>");
   });
 
-  test("includes AskUserQuestion instruction", () => {
-    const result = formatTaskPrompt("Any task");
-
-    expect(result).toContain("AskUserQuestion");
-    expect(result).toContain("CRITICAL");
-  });
-
   test("context block appears before task block when startUrl is provided", () => {
     const result = formatTaskPrompt("My task", "https://example.com");
 
@@ -53,12 +43,21 @@ describe("formatTaskPrompt", () => {
     const taskIndex = result.indexOf("<task>");
     expect(contextIndex).toBeLessThan(taskIndex);
   });
+});
 
-  test("instructions block appears after task block", () => {
-    const result = formatTaskPrompt("My task");
+describe("WORKER_SYSTEM_PROMPT", () => {
+  test("includes AskUserQuestion instruction", () => {
+    expect(WORKER_SYSTEM_PROMPT).toContain("AskUserQuestion");
+  });
 
-    const taskEndIndex = result.indexOf("</task>");
-    const instructionsIndex = result.indexOf("<instructions>");
-    expect(taskEndIndex).toBeLessThan(instructionsIndex);
+  test("includes task query instructions", () => {
+    expect(WORKER_SYSTEM_PROMPT).toContain("figaro.list_tasks()");
+    expect(WORKER_SYSTEM_PROMPT).toContain("figaro.search_tasks");
+    expect(WORKER_SYSTEM_PROMPT).toContain("figaro.get_task");
+    expect(WORKER_SYSTEM_PROMPT).toContain("python_exec");
+  });
+
+  test("includes browser automation instructions", () => {
+    expect(WORKER_SYSTEM_PROMPT).toContain("patchright-cli");
   });
 });

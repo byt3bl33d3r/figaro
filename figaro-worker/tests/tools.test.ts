@@ -26,33 +26,36 @@ const EXPECTED_TOOL_NAMES = [
   "press_key",
   "scroll",
   "mouse_drag",
+  "python_exec",
 ];
 
 describe("createDesktopToolsServer", () => {
-  test("returns a truthy value", () => {
-    const server = createDesktopToolsServer();
+  test("returns server and destroySession", () => {
+    const { server, destroySession } = createDesktopToolsServer();
     expect(server).toBeTruthy();
+    expect(typeof destroySession).toBe("function");
   });
 
   test("returns a server with a name", () => {
-    const server = createDesktopToolsServer() as { name: string };
+    const { server } = createDesktopToolsServer() as { server: { name: string }; destroySession: Function };
     expect(server.name).toBe("desktop");
   });
 
   test("returns a server with a version", () => {
-    const server = createDesktopToolsServer() as { version: string };
+    const { server } = createDesktopToolsServer() as { server: { version: string }; destroySession: Function };
     expect(server.version).toBe("1.0.0");
   });
 
   test("returns a server with tools array", () => {
-    const server = createDesktopToolsServer() as { tools: unknown[] };
+    const { server } = createDesktopToolsServer() as { server: { tools: unknown[] }; destroySession: Function };
     expect(Array.isArray(server.tools)).toBe(true);
     expect(server.tools.length).toBeGreaterThan(0);
   });
 
   test("includes expected tool names", () => {
-    const server = createDesktopToolsServer() as {
-      tools: Array<{ name: string }>;
+    const { server } = createDesktopToolsServer() as {
+      server: { tools: Array<{ name: string }> };
+      destroySession: Function;
     };
     const toolNames = server.tools.map((t) => t.name);
     for (const name of EXPECTED_TOOL_NAMES) {
@@ -106,11 +109,12 @@ describe("tool parity", () => {
     expect(linuxNames).toEqual(macosNames);
   });
 
-  test("both backends expose exactly the expected tools", () => {
+  test("both backends expose exactly the expected desktop tools", () => {
     const linuxTools = createLinuxTools() as Array<{ name: string }>;
     const macosTools = createMacosTools() as Array<{ name: string }>;
 
-    const expected = [...EXPECTED_TOOL_NAMES].sort();
+    // Platform backends only include desktop tools, not python_exec (added at server level)
+    const expected = EXPECTED_TOOL_NAMES.filter((n) => n !== "python_exec").sort();
     expect(linuxTools.map((t) => t.name).sort()).toEqual(expected);
     expect(macosTools.map((t) => t.name).sort()).toEqual(expected);
   });
@@ -129,8 +133,9 @@ describe("platform-based tool selection", () => {
 
   test("WORKER_PLATFORM=darwin selects macOS tools", () => {
     process.env.WORKER_PLATFORM = "darwin";
-    const server = createDesktopToolsServer() as {
-      tools: Array<{ name: string }>;
+    const { server } = createDesktopToolsServer() as {
+      server: { tools: Array<{ name: string }> };
+      destroySession: Function;
     };
     const toolNames = server.tools.map((t) => t.name);
     for (const name of EXPECTED_TOOL_NAMES) {
@@ -140,8 +145,9 @@ describe("platform-based tool selection", () => {
 
   test("WORKER_PLATFORM=linux selects Linux tools", () => {
     process.env.WORKER_PLATFORM = "linux";
-    const server = createDesktopToolsServer() as {
-      tools: Array<{ name: string }>;
+    const { server } = createDesktopToolsServer() as {
+      server: { tools: Array<{ name: string }> };
+      destroySession: Function;
     };
     const toolNames = server.tools.map((t) => t.name);
     for (const name of EXPECTED_TOOL_NAMES) {

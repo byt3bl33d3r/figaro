@@ -3,7 +3,7 @@
 from datetime import datetime, timezone
 from typing import Any
 
-from sqlalchemy import func, select, update
+from sqlalchemy import String, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -349,27 +349,40 @@ class TaskRepository:
         self,
         query: str,
         status: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        include_messages: bool = False,
     ) -> list[TaskModel]:
         """Search tasks by prompt content.
 
         Args:
             query: Search string to match in prompts
             status: Optional status filter
+            limit: Maximum number of results
+            offset: Number of results to skip
+            include_messages: Whether to eagerly load messages
 
         Returns:
-            List of matching TaskModel instances with messages loaded
+            List of matching TaskModel instances
         """
-        stmt = (
-            select(TaskModel)
-            .options(selectinload(TaskModel.messages))
-            .where(TaskModel.prompt.ilike(f"%{query}%"))
+        stmt = select(TaskModel).distinct()
+
+        if include_messages:
+            stmt = stmt.options(selectinload(TaskModel.messages))
+
+        stmt = stmt.outerjoin(TaskMessageModel).where(
+            or_(
+                TaskModel.prompt.ilike(f"%{query}%"),
+                TaskModel.result.cast(String).ilike(f"%{query}%"),
+                TaskMessageModel.content.cast(String).ilike(f"%{query}%"),
+            )
         )
 
         if status:
             status_enum = TaskStatus(status)
             stmt = stmt.where(TaskModel.status == status_enum)
 
-        stmt = stmt.order_by(TaskModel.created_at.desc())
+        stmt = stmt.order_by(TaskModel.created_at.desc()).limit(limit).offset(offset)
 
         result = await self.session.execute(stmt)
         return list(result.scalars().all())

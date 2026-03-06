@@ -182,16 +182,22 @@ class TaskManager:
         self,
         query: str,
         status: str | None = None,
+        limit: int = 20,
+        offset: int = 0,
+        include_messages: bool = False,
     ) -> list[Task]:
         """Search tasks by prompt content."""
         if self._session_factory:
             async with self._session_factory() as session:
                 repo = TaskRepository(session)
-                models = await repo.search_by_prompt(query=query, status=status)
+                models = await repo.search_by_prompt(
+                    query=query, status=status, limit=limit, offset=offset, include_messages=include_messages,
+                )
                 tasks = []
                 for model in models:
                     task = Task.from_model(model)
-                    task.messages = [msg.content for msg in model.messages]
+                    if include_messages:
+                        task.messages = [msg.content for msg in model.messages]
                     tasks.append(task)
                 return tasks
 
@@ -204,6 +210,7 @@ class TaskManager:
             ]
             if status:
                 tasks = [t for t in tasks if t.status.value == status]
+            tasks = tasks[offset:offset + limit]
             return tasks
 
     async def get_tasks_by_worker(self, worker_id: str) -> list[Task]:

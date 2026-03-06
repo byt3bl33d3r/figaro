@@ -1,0 +1,31 @@
+# Stage 1: Build pgvector
+FROM postgres:16 AS pgvector-builder
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends \
+        build-essential \
+        ca-certificates \
+        git \
+        postgresql-server-dev-16 && \
+    cd /tmp && \
+    git clone --branch v0.8.2 https://github.com/pgvector/pgvector.git && \
+    cd pgvector && \
+    make && make install DESTDIR=/tmp/pgvector-install
+
+# Stage 2: Install pg_search from ParadeDB GitHub releases
+FROM postgres:16 AS pgsearch-builder
+
+ARG PG_SEARCH_VERSION=0.21.13
+ARG TARGETARCH
+
+RUN apt-get update && \
+    apt-get install -y --no-install-recommends ca-certificates curl && \
+    curl -L "https://github.com/paradedb/paradedb/releases/download/v${PG_SEARCH_VERSION}/postgresql-16-pg-search_${PG_SEARCH_VERSION}-1PARADEDB-bookworm_${TARGETARCH}.deb" -o /tmp/pg_search.deb && \
+    apt-get install -y /tmp/pg_search.deb
+
+# Stage 3: Final image with just the extensions
+FROM postgres:16
+
+COPY --from=pgvector-builder /tmp/pgvector-install/usr/ /usr/
+COPY --from=pgsearch-builder /usr/lib/postgresql/16/lib/ /usr/lib/postgresql/16/lib/
+COPY --from=pgsearch-builder /usr/share/postgresql/16/extension/ /usr/share/postgresql/16/extension/
