@@ -59,6 +59,11 @@ bun test                  # Run tests
 bun run build             # Compile to standalone binary
 ```
 
+**Pyodide with Bun single-file executables:** Bun's single-file compilation doesn't support Pyodide's dynamic `pyodide.asm.js` loading. To fix this, explicitly import it so Bun bundles it and its side effect sets `globalThis._createPyodideModule`, causing pyodide to skip the dynamic load:
+```ts
+import "pyodide/pyodide.asm.js";
+```
+
 ### Gateway (figaro-gateway/)
 ```bash
 cd figaro-gateway

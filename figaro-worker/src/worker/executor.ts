@@ -11,6 +11,7 @@ import { LoopDetectionSession, buildLoopDetectionHooks, type LoopDetectionConfig
 import { HelpRequestHandler } from "./help-request";
 import { formatTaskPrompt } from "./prompt-formatter";
 import { createDesktopToolsServer } from "./tools";
+import { createPythonToolsServer } from "../python/tools";
 
 export class TaskExecutor {
   private client: NatsClient;
@@ -82,6 +83,7 @@ export class TaskExecutor {
     const formattedPrompt = formatTaskPrompt(prompt, startUrl);
 
     const desktopTools = createDesktopToolsServer();
+    const { server: pythonTools, destroySession } = createPythonToolsServer();
 
     const canUseTool = async (
       toolName: string,
@@ -146,7 +148,7 @@ export class TaskExecutor {
         model: this.model,
         settingSources: ["user", "project"],
         canUseTool,
-        mcpServers: { desktop: desktopTools },
+        mcpServers: { desktop: desktopTools, python: pythonTools },
         abortController,
         ...(this.claudeCodePath ? { pathToClaudeCodeExecutable: this.claudeCodePath } : {}),
         ...(hooks ? { hooks } : {}),
@@ -168,6 +170,7 @@ export class TaskExecutor {
       }
     } finally {
       q.close();
+      destroySession();
       if (!abortController.signal.aborted) {
         setTimeout(() => {
           if (!abortController.signal.aborted) {

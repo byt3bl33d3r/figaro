@@ -38,7 +38,7 @@ WORKDIR /worker
 # Install Claude Code CLI
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
-# Copy native binary (no Python runtime needed!)
+# Copy native binary (pyodide JS bundled as code, data files embedded as bunfs assets)
 COPY --from=builder /build/dist/figaro-worker /usr/local/bin/figaro-worker
 
 # Copy skills

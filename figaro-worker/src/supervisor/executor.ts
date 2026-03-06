@@ -12,6 +12,7 @@ import {
   formatSupervisorPrompt,
   SUPERVISOR_SYSTEM_PROMPT,
 } from "./prompt-formatter";
+import { createPythonToolsServer } from "../python/tools";
 import { createSupervisorToolsServer } from "./tools";
 
 interface TaskSession {
@@ -85,6 +86,7 @@ export class SupervisorExecutor {
 
   private async runSession(session: TaskSession): Promise<void> {
     const { taskId, prompt, options, sourceMetadata } = session;
+    const { server: pythonTools, destroySession } = createPythonToolsServer();
 
     try {
       // Notify we're busy
@@ -161,7 +163,7 @@ export class SupervisorExecutor {
           maxTurns: (options.max_turns as number | undefined) ?? this.maxTurns,
           model: this.model,
           canUseTool,
-          mcpServers: { orchestrator: toolsServer },
+          mcpServers: { orchestrator: toolsServer, python: pythonTools },
           abortController,
           stderr: (data: string) => {
             console.error(`[supervisor] [${taskId.slice(0, 8)}] stderr: ${data.trimEnd()}`);
@@ -214,6 +216,7 @@ export class SupervisorExecutor {
       }
     } finally {
       this.sessions.delete(taskId);
+      destroySession();
       this.abortControllers.delete(taskId);
       // Notify idle only when last session ends
       if (this.sessions.size === 0) {
