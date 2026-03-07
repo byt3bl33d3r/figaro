@@ -13,7 +13,7 @@
 
 Figaro orchestrates fleets of Claude computer use agents that automate workflows on full desktop environments. Agents run inside containerized Linux desktops or connect to any VNC-accessible machine -- remote servers, cloud VMs, or physical workstations. All desktops are live-streamed to a central dashboard, and a supervisor agent handles task delegation. Everything can be managed conversationally through external channels like Telegram.
 
-Figaro can connect to any VNC-accessible desktop -- local machines, remote servers, cloud VMs, or physical workstations running macOS, Windows, or Linux. Desktops are added from the UI with a VNC URL (`vnc://`, `ws://`, or `wss://`), and the supervisor agent can observe and interact with any connected desktop via screenshots, typing, clicking, and key presses.
+Figaro can connect to any accessible desktop -- local machines, remote servers, cloud VMs, or physical workstations running macOS, Windows, or Linux. Desktops are added from the UI with a connection URL (`vnc://`, `rdp://`, `ssh://`, `telnet://`, `ws://`, or `wss://`), and the supervisor agent can observe and interact with any connected desktop via screenshots, typing, clicking, and key presses. Desktop streaming uses Apache Guacamole (guacd + guacamole-common-js) for protocol-agnostic remote access.
 
 The system is built for long-running tasks that take minutes to hours. All services communicate over [NATS](https://nats.io) (pub/sub + JetStream for durable task events). A supervisor agent handles task optimization and delegation.
 
@@ -36,14 +36,15 @@ You can also manage everything by chatting with the supervisor agent through the
 - [Message Flows](#message-flows)
 - [Testing](#testing)
 - [Contributing](#contributing)
+- [Credits](#credits)
 
 ## UI Action shot
 
 <p align="center">
 <picture>
-  <source media="(prefers-color-scheme: dark)" srcset="docs/ui_shot.png">
-  <source media="(prefers-color-scheme: light)" srcset="docs/ui_shot.png">
-  <img width="900" alt="Figaro Dashboard" src="docs/ui_shot.png">
+  <source media="(prefers-color-scheme: dark)" srcset="docs/action_shot.png">
+  <source media="(prefers-color-scheme: light)" srcset="docs/action_shot.png">
+  <img width="900" alt="Figaro Dashboard" src="docs/action_shot.png">
 </picture>
 </p>
 
@@ -112,7 +113,7 @@ docker compose -f docker/docker-compose.yml -f docker/docker-compose.dev.yml up 
 
 Open `http://localhost:8000`.
 
-This starts PostgreSQL, NATS (port 8443), the orchestrator (port 8000), 2 workers, 2 supervisors, and the gateway. The supervisor service uses the same `figaro-worker` binary started with the `--supervisor` flag.
+This starts PostgreSQL, NATS (port 8443), guacd (Guacamole daemon), the orchestrator (port 8000), 2 workers, 2 supervisors, and the gateway. The supervisor service uses the same `figaro-worker` binary started with the `--supervisor` flag.
 
 ### Scaling
 
@@ -136,10 +137,13 @@ Figaro is not limited to its own containerized workers. Any machine with a VNC s
 Click "Add Desktop" in the dashboard header. Provide a worker ID, a desktop URL, and select the OS type. Supported URL schemes:
 
 - `vnc://user:password@hostname:5901` -- direct TCP VNC connection
-- `ws://hostname:6080` -- WebSocket (noVNC-compatible)
-- `wss://hostname:6080` -- WebSocket over TLS
+- `rdp://user:password@hostname:3389` -- RDP connection
+- `ssh://user:password@hostname:22` -- SSH connection
+- `telnet://user:password@hostname:23` -- telnet connection
+- `ws://hostname:6080` -- WebSocket (legacy noVNC-compatible)
+- `wss://hostname:6080` -- WebSocket over TLS (legacy noVNC-compatible)
 
-Credentials can be embedded in the URL or entered separately. Connected desktops appear in the live desktop grid and can be viewed, screenshotted, and interacted with by the supervisor agent's VNC tools.
+Credentials can be embedded in the URL or entered separately. Connected desktops appear in the live desktop grid and can be viewed, screenshotted, and interacted with by the supervisor agent's VNC tools. SSH and telnet connections are accessible via the supervisor's terminal tools (`ssh_run_command`, `telnet_run_command`).
 
 ### From Environment Variables
 
@@ -261,18 +265,23 @@ Figaro is designed for trusted, isolated environments -- private Docker networks
   +----+----+ +---+----+ +---+-----+ +---+----------+ +-+----------+
   | Worker  | |Orchestr| |Supervis | |   Gateway    | |    UI      |
   |  (x N)  | |  ator  | |   or    | |  (channels)  | |   (SPA)    |
-  +---------+ +--------+ +---------+ +--------------+ +------------+
+  +---------+ +---+----+ +---------+ +--------------+ +------------+
+                  |
+             +----+---------------+
+             |       guacd        |
+             | (Apache Guacamole) |
+             +--------------------+
 ```
 
-All services communicate via NATS (pub/sub + JetStream for durable task events). The UI connects to NATS via WebSocket (`nats.ws`) for both real-time events and mutations (request/reply). The only HTTP endpoints are `GET /api/config` (NATS URL discovery) and `WS /vnc/{worker_id}` (VNC proxy).
+All services communicate via NATS (pub/sub + JetStream for durable task events). The UI connects to NATS via WebSocket (`nats.ws`) for both real-time events and mutations (request/reply). HTTP endpoints are minimal: `GET /api/config` (NATS URL discovery), `GET /api/guacamole/token` (encrypted connection tokens), and `WS /guacamole/webSocket` (Guacamole WebSocket tunnel via guapy).
 
 ## Services
 
 ### Orchestrator (`figaro/`)
 
-FastAPI application that manages task lifecycle, worker registry, and scheduling. Serves the built UI as static files. Handles all NATS API request/reply operations (task CRUD, scheduled tasks, help requests, VNC proxy). Persists state to PostgreSQL with Alembic migrations.
+FastAPI application that manages task lifecycle, worker registry, and scheduling. Serves the built UI as static files. Handles all NATS API request/reply operations (task CRUD, scheduled tasks, help requests, VNC/SSH/telnet proxy). Mounts a guapy Guacamole WebSocket server for desktop streaming. Persists state to PostgreSQL with Alembic migrations.
 
-**Stack:** Python 3.14, FastAPI, SQLAlchemy (async), asyncpg, asyncvnc, Pillow
+**Stack:** Python 3.14, FastAPI, SQLAlchemy (async), asyncpg, asyncvnc, guapy, asyncssh, telnetlib3, Pillow
 
 ### Worker (`figaro-worker/`)
 
@@ -280,7 +289,7 @@ A Claude computer use agent that executes browser automation tasks via the claud
 
 The worker is a standalone service that can run on any machine with a desktop environment. In Docker, it runs inside a containerized Linux desktop (Fluxbox + TigerVNC + Chromium + noVNC) provided by the container image, but it can also run directly on a physical or virtual machine -- see [Connecting External Desktops](#connecting-external-desktops).
 
-The same binary also runs as a **supervisor** when started with the `--supervisor` flag. In supervisor mode, the agent receives complex tasks and delegates them to workers. It can directly observe and interact with any connected desktop via VNC tools -- taking screenshots, typing, clicking, and pressing keys -- without delegating a full task. Uses SDK-native custom tools backed by NATS request/reply for delegation and task management. Supports blocking delegation with inactivity-based timeouts.
+The same binary also runs as a **supervisor** when started with the `--supervisor` flag. In supervisor mode, the agent receives complex tasks and delegates them to workers. It can directly observe and interact with any connected desktop via VNC tools -- taking screenshots, typing, clicking, and pressing keys -- without delegating a full task. It can also execute commands on workers with SSH or telnet connections. Uses SDK-native custom tools backed by NATS request/reply for delegation and task management. Supports blocking delegation with inactivity-based timeouts.
 
 **Stack:** Bun (compiled native binary), `@anthropic-ai/claude-agent-sdk`, NATS
 
@@ -294,9 +303,9 @@ Channel-agnostic messaging gateway that routes messages between external communi
 
 ### UI (`figaro-ui/`)
 
-React single-page application providing a dashboard with live desktop grid (noVNC viewers), event stream, chat input for task submission, scheduled task management, and help request handling. Connects directly to NATS via WebSocket for all communication.
+React single-page application providing a dashboard with live desktop grid (Guacamole viewers), event stream, chat input for task submission, scheduled task management, and help request handling. Connects directly to NATS via WebSocket for all communication. Desktop streaming uses `guacamole-common-js` with auto-reconnect and display scaling.
 
-**Stack:** React 18, TypeScript, Vite, Zustand, Tailwind CSS, noVNC, `nats.ws`
+**Stack:** React 18, TypeScript, Vite, Zustand, Tailwind CSS, `guacamole-common-js`, `nats.ws`
 
 ### Shared NATS Library (`figaro-nats/`)
 
@@ -385,6 +394,9 @@ uv run alembic revision --autogenerate -m "description"  # Create new migration
 | `FIGARO_STATIC_DIR` | Orchestrator | Path to built UI files | -- |
 | `FIGARO_SELF_HEALING_ENABLED` | Orchestrator | Auto-retry failed tasks | `true` |
 | `FIGARO_SELF_HEALING_MAX_RETRIES` | Orchestrator | Max healing retries per task chain | `2` |
+| `FIGARO_GUACD_HOST` | Orchestrator | Guacamole daemon hostname | `localhost` |
+| `FIGARO_GUACD_PORT` | Orchestrator | Guacamole daemon port | `4822` |
+| `FIGARO_ENCRYPTION_KEY` | Orchestrator | AES-256-CBC key for Guacamole tokens (auto-generated if not set) | -- |
 | `FIGARO_VNC_PASSWORD` | Orchestrator | VNC password for worker desktops | -- |
 | `FIGARO_VNC_PORT` | Orchestrator | VNC display port on workers | `5901` |
 | `WORKER_NATS_URL` | Worker | NATS server URL | -- |
@@ -440,6 +452,14 @@ figaro.help.request                       # New help request
 figaro.help.{request_id}.response         # Response to help request
 ```
 
+### Broadcasts (Core NATS)
+
+```
+figaro.broadcast.workers                  # Updated workers list
+figaro.broadcast.supervisors              # Updated supervisors list
+figaro.broadcast.task_healing             # Task healing event
+```
+
 ### API (NATS request/reply)
 
 ```
@@ -454,7 +474,9 @@ figaro.api.scheduled-tasks                # List scheduled tasks
 figaro.api.scheduled-tasks.{get,create,update,delete,toggle,trigger}
 figaro.api.help-requests.respond          # Respond to help request
 figaro.api.help-requests.dismiss          # Dismiss help request
-figaro.api.vnc                            # VNC operations
+figaro.api.vnc                            # VNC operations (screenshot, type, key, click)
+figaro.api.ssh                            # SSH operations (run_command)
+figaro.api.telnet                         # Telnet operations (run_command)
 ```
 
 ### Gateway (Core NATS)
@@ -463,6 +485,7 @@ figaro.api.vnc                            # VNC operations
 figaro.gateway.{channel}.send             # Send message via channel
 figaro.gateway.{channel}.task             # Task from channel
 figaro.gateway.{channel}.question         # Ask question via channel
+figaro.gateway.{channel}.register         # Channel gateway registers availability
 ```
 
 ## Message Flows
@@ -519,3 +542,8 @@ cd figaro-worker && bun test
 ## Contributing
 
 Pull requests are welcome! Issues are disabled on this repository -- if you've found a bug or have a feature request, please start a thread in [Discussions](../../discussions) first. Once the approach is agreed upon, feel free to open a PR.
+
+## Credits
+
+- [OpenClaw](https://openclaw.ai) for design inspiration around some agent control primitives (e.g. loop control, cost tracking etc..)
+- [Apache Guacamole](https://guacamole.apache.org) & [Guapy](https://github.com/Adithya1331/guapy) 
