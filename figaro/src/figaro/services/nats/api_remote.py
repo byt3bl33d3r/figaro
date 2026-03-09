@@ -52,9 +52,7 @@ async def api_vnc(svc: NatsService, data: dict[str, Any]) -> dict[str, Any]:
 
         if parsed.scheme == "wss":
             # WebSocket mode — tunnel through websockify (raw VNC port not accessible)
-            logger.debug(
-                "VNC %s: using WebSocket connection to %s", action, novnc_url
-            )
+            logger.debug("VNC %s: using WebSocket connection to %s", action, novnc_url)
             ctx = svc._vnc_pool.ws_connection(
                 novnc_url,
                 username=username,
@@ -199,9 +197,7 @@ async def api_ssh(svc: NatsService, data: dict[str, Any]) -> dict[str, Any]:
             )
             return result
         else:
-            logger.warning(
-                "SSH unknown action '%s' for worker %s", action, worker_id
-            )
+            logger.warning("SSH unknown action '%s' for worker %s", action, worker_id)
             return {"error": f"Unknown action: {action}"}
     except asyncio.TimeoutError:
         logger.error("SSH %s timed out for worker %s", action, worker_id)
@@ -220,9 +216,7 @@ async def api_telnet(svc: NatsService, data: dict[str, Any]) -> dict[str, Any]:
 
     conn = await svc._registry.get_connection(worker_id)
     if conn is None:
-        logger.warning(
-            "Telnet %s: worker %s not found in registry", action, worker_id
-        )
+        logger.warning("Telnet %s: worker %s not found in registry", action, worker_id)
         return {"error": "Worker not found"}
 
     novnc_url = conn.novnc_url or ""

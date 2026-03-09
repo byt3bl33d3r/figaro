@@ -67,9 +67,7 @@ async def maybe_notify_gateway(
                 channel,
                 {"chat_id": "", "text": text},
             )
-        logger.info(
-            f"Sent gateway notification for scheduled task {scheduled_task_id}"
-        )
+        logger.info(f"Sent gateway notification for scheduled task {scheduled_task_id}")
     except Exception:
         logger.exception(f"Failed to send gateway notification for task {task_id}")
 
@@ -324,9 +322,7 @@ IMPORTANT: Do not simply retry with the exact same prompt. Analyze the failure a
         logger.warning(f"Failed to create healer task for {task_id}: {e}")
 
 
-async def increment_worker_completed_count(
-    svc: NatsService, worker_id: str
-) -> None:
+async def increment_worker_completed_count(svc: NatsService, worker_id: str) -> None:
     """Background task to increment worker completed count in DB."""
     if not svc._session_factory:
         return

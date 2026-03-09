@@ -15,8 +15,6 @@ interface WorkersState {
   // Selectors
   getWorker: (workerId: string) => Worker | undefined;
   getWorkersList: () => Worker[];
-  getIdleWorkers: () => Worker[];
-  getSelectedWorker: () => Worker | undefined;
 }
 
 export const useWorkersStore = create<WorkersState>((set, get) => ({
@@ -67,14 +65,5 @@ export const useWorkersStore = create<WorkersState>((set, get) => ({
 
   getWorkersList: () => {
     return Array.from(get().workers.values());
-  },
-
-  getIdleWorkers: () => {
-    return Array.from(get().workers.values()).filter((w) => w.status === 'idle' && w.agent_connected);
-  },
-
-  getSelectedWorker: () => {
-    const { selectedWorkerId, workers } = get();
-    return selectedWorkerId ? workers.get(selectedWorkerId) : undefined;
   },
 }));

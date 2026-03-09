@@ -5,7 +5,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from figaro.models import ClientType
 from figaro.models.messages import WorkerStatus
-from figaro.models.scheduled_task import ScheduledTask
 from figaro.services import Registry, TaskManager
 from figaro.services.task_manager import TaskStatus
 
@@ -84,16 +83,18 @@ def nats_service(
 
 
 def _make_scheduled_task(schedule_id="sched-1", self_learning=True):
-    """Helper to create a ScheduledTask with defaults."""
-    return ScheduledTask(
-        schedule_id=schedule_id,
-        name="Daily Report",
-        prompt="Generate the daily report",
-        start_url="https://example.com",
-        interval_seconds=86400,
-        enabled=True,
-        self_learning=self_learning,
-    )
+    """Helper to create a mock scheduled task with defaults."""
+    model = MagicMock()
+    model.schedule_id = schedule_id
+    model.name = "Daily Report"
+    model.prompt = "Generate the daily report"
+    model.start_url = "https://example.com"
+    model.interval_seconds = 86400
+    model.enabled = True
+    model.self_learning = self_learning
+    model.self_learning_max_runs = None
+    model.self_learning_run_count = 0
+    return model
 
 
 def _prepare_db_mocks(nats_service, mock_task_model):

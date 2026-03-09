@@ -153,9 +153,7 @@ async def handle_deregister(svc: NatsService, data: dict[str, Any]) -> None:
     client_id = data.get("client_id", "")
 
     # Cancel help requests
-    cancelled = await svc._help_request_manager.cancel_requests_for_worker(
-        client_id
-    )
+    cancelled = await svc._help_request_manager.cancel_requests_for_worker(client_id)
     if cancelled > 0:
         logger.info(f"Cancelled {cancelled} pending help requests for {client_id}")
 

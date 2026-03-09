@@ -62,9 +62,7 @@ async def heartbeat_monitor(svc: NatsService) -> None:
             for client_id in timed_out:
                 logger.warning(f"Client {client_id} timed out, unregistering")
                 conn = await svc._registry.get_connection(client_id)
-                await svc._help_request_manager.cancel_requests_for_worker(
-                    client_id
-                )
+                await svc._help_request_manager.cancel_requests_for_worker(client_id)
                 if client_id in svc._desktop_worker_ids:
                     await svc._registry.downgrade_to_desktop_only(client_id)
                     logger.info(

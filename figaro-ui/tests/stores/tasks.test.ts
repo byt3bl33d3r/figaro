@@ -24,28 +24,6 @@ describe('useTasksStore', () => {
     output_tokens: 0,
   });
 
-  describe('setTasks', () => {
-    it('should set tasks from array', () => {
-      const tasks = [createTask('task-1'), createTask('task-2')];
-      useTasksStore.getState().setTasks(tasks);
-
-      const state = useTasksStore.getState();
-      expect(state.tasks.size).toBe(2);
-      expect(state.tasks.get('task-1')).toEqual(tasks[0]);
-      expect(state.tasks.get('task-2')).toEqual(tasks[1]);
-    });
-
-    it('should replace existing tasks', () => {
-      useTasksStore.getState().setTasks([createTask('task-1')]);
-      useTasksStore.getState().setTasks([createTask('task-3')]);
-
-      const state = useTasksStore.getState();
-      expect(state.tasks.size).toBe(1);
-      expect(state.tasks.has('task-1')).toBe(false);
-      expect(state.tasks.has('task-3')).toBe(true);
-    });
-  });
-
   describe('addTask', () => {
     it('should add a new task', () => {
       const task = createTask('task-1');
@@ -79,23 +57,6 @@ describe('useTasksStore', () => {
       useTasksStore.getState().removeTask('nonexistent');
 
       expect(useTasksStore.getState().tasks.size).toBe(1);
-    });
-  });
-
-  describe('updateTaskStatus', () => {
-    it('should update task status', () => {
-      useTasksStore.getState().addTask(createTask('task-1'));
-      useTasksStore.getState().updateTaskStatus('task-1', 'running');
-
-      expect(useTasksStore.getState().tasks.get('task-1')?.status).toBe('running');
-    });
-
-    it('should not modify state for nonexistent task', () => {
-      useTasksStore.getState().addTask(createTask('task-1'));
-      useTasksStore.getState().updateTaskStatus('nonexistent', 'running');
-
-      expect(useTasksStore.getState().tasks.size).toBe(1);
-      expect(useTasksStore.getState().tasks.get('task-1')?.status).toBe('assigned');
     });
   });
 

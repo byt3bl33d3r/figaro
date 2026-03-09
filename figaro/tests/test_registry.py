@@ -99,18 +99,6 @@ class TestRegistry:
         assert worker_ids == {"worker-1", "worker-2"}
 
     @pytest.mark.asyncio
-    async def test_get_ui_clients(self, registry: Registry):
-        """Test getting all UI clients."""
-        await registry.register("worker-1", ClientType.WORKER)
-        await registry.register("ui-1", ClientType.UI)
-        await registry.register("ui-2", ClientType.UI)
-
-        ui_clients = await registry.get_ui_clients()
-        assert len(ui_clients) == 2
-        ui_ids = {c.client_id for c in ui_clients}
-        assert ui_ids == {"ui-1", "ui-2"}
-
-    @pytest.mark.asyncio
     async def test_get_idle_worker(self, registry: Registry):
         """Test getting an idle worker."""
         await registry.register("worker-1", ClientType.WORKER)

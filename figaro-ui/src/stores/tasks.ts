@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import type { ActiveTask, TaskStatus } from '../types';
+import type { ActiveTask } from '../types';
 
 interface AgentStats {
   cost_usd: number;
@@ -13,10 +13,8 @@ interface TasksState {
   agentLifetimeStats: Map<string, AgentStats>;
 
   // Actions
-  setTasks: (tasks: ActiveTask[]) => void;
   addTask: (task: ActiveTask) => void;
   removeTask: (taskId: string) => void;
-  updateTaskStatus: (taskId: string, status: TaskStatus) => void;
   updateTaskCost: (taskId: string, costUsd?: number, inputTokens?: number, outputTokens?: number, messageId?: string) => void;
   clearTasks: () => void;
 
@@ -29,11 +27,6 @@ export const useTasksStore = create<TasksState>((set, get) => ({
   tasks: new Map(),
   seenMessageIds: {},
   agentLifetimeStats: new Map(),
-
-  setTasks: (tasks) => {
-    const tasksMap = new Map(tasks.map((t) => [t.task_id, t]));
-    set({ tasks: tasksMap });
-  },
 
   addTask: (task) => {
     set((state) => {
@@ -63,16 +56,6 @@ export const useTasksStore = create<TasksState>((set, get) => ({
       }
 
       return { tasks: newTasks, seenMessageIds: newSeenMessageIds, agentLifetimeStats: newLifetimeStats };
-    });
-  },
-
-  updateTaskStatus: (taskId, status) => {
-    set((state) => {
-      const task = state.tasks.get(taskId);
-      if (!task) return state;
-      const newTasks = new Map(state.tasks);
-      newTasks.set(taskId, { ...task, status });
-      return { tasks: newTasks };
     });
   },
 

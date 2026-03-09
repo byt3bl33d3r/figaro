@@ -162,9 +162,7 @@ class NatsService:
             error=error,
         )
 
-    async def publish_gateway_send(
-        self, channel: str, message: dict[str, Any]
-    ) -> None:
+    async def publish_gateway_send(self, channel: str, message: dict[str, Any]) -> None:
         await publish_gateway_send(self, channel, message)
 
     # ── Private method wrappers (for backward compatibility) ────
@@ -172,9 +170,7 @@ class NatsService:
     async def _handle_worker_register(self, data: dict[str, Any]) -> dict[str, Any]:
         return await handle_worker_register(self, data)
 
-    async def _handle_supervisor_register(
-        self, data: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _handle_supervisor_register(self, data: dict[str, Any]) -> dict[str, Any]:
         return await handle_supervisor_register(self, data)
 
     async def _handle_heartbeat(self, data: dict[str, Any]) -> None:
@@ -220,12 +216,8 @@ class NatsService:
     ) -> dict[str, Any]:
         return await api_register_desktop_worker(self, data)
 
-    async def _api_remove_desktop_worker(
-        self, data: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _api_remove_desktop_worker(self, data: dict[str, Any]) -> dict[str, Any]:
         return await api_remove_desktop_worker(self, data)
 
-    async def _api_update_desktop_worker(
-        self, data: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _api_update_desktop_worker(self, data: dict[str, Any]) -> dict[str, Any]:
         return await api_update_desktop_worker(self, data)

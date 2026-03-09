@@ -1,7 +1,6 @@
 import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest';
 import {
   fetchScheduledTasks,
-  getScheduledTask,
   createScheduledTask,
   updateScheduledTask,
   deleteScheduledTask,
@@ -35,7 +34,16 @@ describe('scheduledTasks API', () => {
     created_at: '2024-01-01T00:00:00Z',
     last_run_at: null,
     next_run_at: '2024-01-01T01:00:00Z',
+    run_at: null,
     run_count: 0,
+    options: {},
+    parallel_workers: 1,
+    max_runs: null,
+    notify_on_complete: false,
+    self_learning: false,
+    self_healing: false,
+    self_learning_max_runs: null,
+    self_learning_run_count: 0,
   });
 
   describe('fetchScheduledTasks', () => {
@@ -53,26 +61,6 @@ describe('scheduledTasks API', () => {
       mockRequest.mockRejectedValueOnce(new Error('NATS request failed'));
 
       await expect(fetchScheduledTasks()).rejects.toThrow('NATS request failed');
-    });
-  });
-
-  describe('getScheduledTask', () => {
-    it('should fetch a single scheduled task', async () => {
-      const task = createMockTask('1');
-      mockRequest.mockResolvedValueOnce(task);
-
-      const result = await getScheduledTask('1');
-
-      expect(mockRequest).toHaveBeenCalledWith('figaro.api.scheduled-tasks.get', {
-        schedule_id: '1',
-      });
-      expect(result).toEqual(task);
-    });
-
-    it('should throw error on not found', async () => {
-      mockRequest.mockRejectedValueOnce(new Error('Not found'));
-
-      await expect(getScheduledTask('nonexistent')).rejects.toThrow('Not found');
     });
   });
 

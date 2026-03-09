@@ -103,11 +103,14 @@ export function handleBroadcastEvent(
     case "scheduled_task_executed": {
       const payload =
         data as unknown as ScheduledTaskExecutedPayload;
+      const taskSummary = payload.task_ids.length === 1
+        ? `task: ${payload.task_ids[0].slice(0, 8)}...`
+        : `${payload.tasks_created} tasks (${payload.tasks_assigned} assigned, ${payload.tasks_queued} queued)`;
       messagesStore.addEvent({
-        worker_id: payload.worker_id,
+        worker_id: payload.worker_ids[0],
         type: "system",
         data: {
-          message: `Scheduled task executed (task: ${payload.task_id.slice(0, 8)}...)`,
+          message: `Scheduled task executed (${taskSummary})`,
         },
       });
       break;
@@ -229,20 +232,39 @@ export function handleBroadcastEvent(
       break;
     }
 
-    case "supervisor_task_complete": {
+    // supervisor_task_complete is not broadcast by orchestrator;
+    // supervisor completions arrive as "task_complete" with supervisor_id set
+    case "supervisor_task_complete":
+      break;
+
+    case "task_complete": {
       const payload = data as unknown as TaskCompletePayload & {
-        supervisor_id: string;
+        worker_id?: string;
+        supervisor_id?: string;
       };
       useTasksStore.getState().removeTask(payload.task_id);
-      supervisorsStore.updateSupervisorStatus(
-        payload.supervisor_id,
-        "idle"
-      );
-      messagesStore.addEvent({
-        supervisor_id: payload.supervisor_id,
-        type: "supervisor_task_complete",
-        data: payload,
-      });
+      if (payload.worker_id) {
+        workersStore.updateWorkerStatus(payload.worker_id, "idle");
+      }
+      if (payload.supervisor_id) {
+        supervisorsStore.updateSupervisorStatus(
+          payload.supervisor_id,
+          "idle"
+        );
+        messagesStore.addEvent({
+          supervisor_id: payload.supervisor_id,
+          type: "supervisor_task_complete",
+          data: payload,
+        });
+      } else {
+        messagesStore.addEvent({
+          worker_id: payload.worker_id,
+          type: "system",
+          data: {
+            message: `Task ${payload.task_id.slice(0, 8)}... completed`,
+          },
+        });
+      }
       break;
     }
 

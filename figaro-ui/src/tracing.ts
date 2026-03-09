@@ -1,4 +1,4 @@
-import { trace, propagation, context } from "@opentelemetry/api";
+import { trace } from "@opentelemetry/api";
 import type { Span } from "@opentelemetry/api";
 import {
   WebTracerProvider,
@@ -47,8 +47,3 @@ export function createTaskSpan(taskPrompt: string): Span {
   return span;
 }
 
-export function injectTraceContext(): Record<string, string> {
-  const carrier: Record<string, string> = {};
-  propagation.inject(context.active(), carrier);
-  return carrier;
-}

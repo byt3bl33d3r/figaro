@@ -3,7 +3,6 @@
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from figaro.models.scheduled_task import ScheduledTask
 from figaro.services import Registry, TaskManager
 
 
@@ -80,15 +79,15 @@ def _make_scheduled_task(
     name="Daily Report",
     notify_on_complete=True,
 ):
-    return ScheduledTask(
-        schedule_id=schedule_id,
-        name=name,
-        prompt="Run daily report",
-        start_url="https://example.com",
-        interval_seconds=86400,
-        enabled=True,
-        notify_on_complete=notify_on_complete,
-    )
+    model = MagicMock()
+    model.schedule_id = schedule_id
+    model.name = name
+    model.prompt = "Run daily report"
+    model.start_url = "https://example.com"
+    model.interval_seconds = 86400
+    model.enabled = True
+    model.notify_on_complete = notify_on_complete
+    return model
 
 
 def _prepare_db_mocks(nats_service, mock_task_model):

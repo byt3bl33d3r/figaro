@@ -6,12 +6,6 @@ export async function fetchScheduledTasks(): Promise<ScheduledTask[]> {
   return resp.tasks ?? [];
 }
 
-export async function getScheduledTask(scheduleId: string): Promise<ScheduledTask> {
-  return natsManager.request<ScheduledTask>('figaro.api.scheduled-tasks.get', {
-    schedule_id: scheduleId,
-  });
-}
-
 export async function createScheduledTask(data: ScheduledTaskCreate): Promise<ScheduledTask> {
   return natsManager.request<ScheduledTask>('figaro.api.scheduled-tasks.create', data);
 }

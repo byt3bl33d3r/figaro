@@ -43,26 +43,7 @@ export interface ActiveTask {
   output_tokens: number;
 }
 
-export interface Task {
-  task_id: string;
-  prompt: string;
-  options: Record<string, unknown>;
-  status: TaskStatus;
-  result?: unknown;
-  worker_id?: string;
-  session_id?: string;
-  messages: SDKMessage[];
-}
-
-// WebSocket message types
 export type ConnectionStatus = 'connecting' | 'connected' | 'disconnected' | 'error';
-
-export interface RegisterPayload {
-  client_type: 'ui' | 'worker' | 'supervisor';
-  worker_id?: string;
-  capabilities?: string[];
-  novnc_url?: string;
-}
 
 export interface WorkersPayload {
   workers: Worker[];
@@ -70,12 +51,6 @@ export interface WorkersPayload {
 
 export interface SupervisorsPayload {
   supervisors: Supervisor[];
-}
-
-export interface TaskPayload {
-  task_id: string;
-  prompt: string;
-  options?: Record<string, unknown>;
 }
 
 export interface TaskAssignedPayload {
@@ -159,29 +134,6 @@ export interface SupervisorTaskSubmittedPayload {
   prompt: string;
 }
 
-// WebSocket message envelope
-export interface WSMessage {
-  type: string;
-  payload: Record<string, unknown>;
-}
-
-// API response types
-export interface TaskCreateRequest {
-  prompt: string;
-  options?: Record<string, unknown>;
-}
-
-export interface TaskResponse {
-  task_id: string;
-  prompt: string;
-  options: Record<string, unknown>;
-  status: string;
-  result?: unknown;
-  worker_id?: string;
-  session_id?: string;
-  messages: SDKMessage[];
-}
-
 // Scheduled task types
 export interface ScheduledTask {
   schedule_id: string;
@@ -239,8 +191,11 @@ export interface ScheduledTaskUpdate {
 // Scheduled task WebSocket payloads
 export interface ScheduledTaskExecutedPayload {
   schedule_id: string;
-  task_id: string;
-  worker_id: string;
+  task_ids: string[];
+  worker_ids: string[];
+  tasks_created: number;
+  tasks_assigned: number;
+  tasks_queued: number;
 }
 
 export interface ScheduledTaskSkippedPayload {

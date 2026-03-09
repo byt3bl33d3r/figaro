@@ -109,7 +109,9 @@ class TestVNCProxy:
         # Client disconnects immediately
         client_ws.receive_bytes.side_effect = Exception("Client disconnected")
 
-        with patch("figaro.vnc_proxy.proxy.websockets.connect", side_effect=mock_connect_fn):
+        with patch(
+            "figaro.vnc_proxy.proxy.websockets.connect", side_effect=mock_connect_fn
+        ):
             with patch(
                 "figaro.vnc_proxy.proxy.asyncio.sleep", new_callable=AsyncMock
             ) as mock_sleep:
@@ -166,7 +168,9 @@ class TestVNCProxy:
         async def mock_connect(url, **kwargs):
             return vnc_ws
 
-        with patch("figaro.vnc_proxy.proxy.websockets.connect", side_effect=mock_connect):
+        with patch(
+            "figaro.vnc_proxy.proxy.websockets.connect", side_effect=mock_connect
+        ):
             await proxy_vnc(client_ws, "worker-1", registry)
 
         # Verify data was proxied
@@ -745,7 +749,8 @@ class TestTlsAutoDetection:
                 return_value=b"RFB 003.008\n",
             ) as mock_auth,
             patch(
-                "figaro.vnc_proxy.proxy._present_no_auth_to_client", new_callable=AsyncMock
+                "figaro.vnc_proxy.proxy._present_no_auth_to_client",
+                new_callable=AsyncMock,
             ),
             patch("figaro.vnc_proxy.proxy._bridge_server_init", new_callable=AsyncMock),
         ):
@@ -790,7 +795,8 @@ class TestTlsAutoDetection:
                 return_value=b"RFB 003.008\n",
             ),
             patch(
-                "figaro.vnc_proxy.proxy._present_no_auth_to_client", new_callable=AsyncMock
+                "figaro.vnc_proxy.proxy._present_no_auth_to_client",
+                new_callable=AsyncMock,
             ),
             patch("figaro.vnc_proxy.proxy._bridge_server_init", new_callable=AsyncMock),
         ):

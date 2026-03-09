@@ -7,7 +7,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from figaro_nats.client import NatsConnection
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+from opentelemetry.trace import StatusCode
+
+from figaro_nats.client import NatsConnection, _subscribe_cb, _subscribe_request_cb, _js_subscribe_cb
 
 
 @pytest.fixture
@@ -344,3 +349,75 @@ class TestErrorHandling:
             assert call_kwargs[1]["name"] == "my-service"
             assert call_kwargs[1]["max_reconnect_attempts"] == -1
             assert call_kwargs[1]["reconnect_time_wait"] == 2
+
+    @pytest.mark.asyncio
+    async def test_subscribe_callback_records_error_on_span(self) -> None:
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+        with patch("figaro_nats.client._tracer", provider.get_tracer("test")):
+            handler = AsyncMock(side_effect=ValueError("boom"))
+            msg = MagicMock()
+            msg.data = json.dumps({"key": "value"}).encode()
+            msg.headers = None
+
+            await _subscribe_cb(msg, handler=handler, subject="test.subject")
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.status.status_code == StatusCode.ERROR
+        assert "boom" in span.status.description
+        events = [e for e in span.events if e.name == "exception"]
+        assert len(events) >= 1
+
+    @pytest.mark.asyncio
+    async def test_subscribe_request_callback_records_error_on_span(self) -> None:
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+        with patch("figaro_nats.client._tracer", provider.get_tracer("test")):
+            handler = AsyncMock(side_effect=ValueError("boom"))
+            msg = MagicMock()
+            msg.data = json.dumps({"key": "value"}).encode()
+            msg.headers = None
+            msg.respond = AsyncMock()
+
+            await _subscribe_request_cb(msg, handler=handler, subject="test.subject")
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.status.status_code == StatusCode.ERROR
+        assert "boom" in span.status.description
+        # Error response should still be sent
+        msg.respond.assert_called_once()
+        resp_data = json.loads(msg.respond.call_args[0][0].decode())
+        assert "error" in resp_data
+
+    @pytest.mark.asyncio
+    async def test_js_subscribe_callback_records_error_on_span(self) -> None:
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider()
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+
+        with patch("figaro_nats.client._tracer", provider.get_tracer("test")):
+            handler = AsyncMock(side_effect=ValueError("boom"))
+            msg = MagicMock()
+            msg.data = json.dumps({"key": "value"}).encode()
+            msg.headers = None
+            msg.ack = AsyncMock()
+            msg.nak = AsyncMock()
+
+            await _js_subscribe_cb(msg, handler=handler, subject="test.subject")
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        span = spans[0]
+        assert span.status.status_code == StatusCode.ERROR
+        assert "boom" in span.status.description
+        # NAK should be called, not ACK
+        msg.ack.assert_not_called()
+        msg.nak.assert_called_once()

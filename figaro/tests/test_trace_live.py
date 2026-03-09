@@ -379,7 +379,9 @@ async def test_failed_task_self_healing_span_chain(record_mode, span_chain_snaps
         # Wait for either error or complete — Claude agents often complete
         # gracefully even on failures (explaining why it couldn't succeed)
         error_future: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
-        complete_future: asyncio.Future[dict] = asyncio.get_running_loop().create_future()
+        complete_future: asyncio.Future[dict] = (
+            asyncio.get_running_loop().create_future()
+        )
 
         error_sub = await nc.subscribe(f"figaro.task.{task_id}.error")
         complete_sub = await nc.subscribe(f"figaro.task.{task_id}.complete")

@@ -5,6 +5,7 @@ import {
   JSONCodec,
   DeliverPolicy,
 } from "nats";
+import { injectTraceContext } from "../tracing/propagation";
 
 // biome-ignore lint: JSON payloads are loosely typed
 export type JsonData = Record<string, any>;
@@ -18,7 +19,8 @@ export async function natsRequest(
   data: JsonData,
   timeout: number = 10_000,
 ): Promise<JsonData> {
-  const response = await nc.request(subject, codec.encode(data), { timeout });
+  const headers = injectTraceContext();
+  const response = await nc.request(subject, codec.encode(data), { timeout, headers });
   return codec.decode(response.data);
 }
 

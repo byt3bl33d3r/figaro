@@ -96,6 +96,4 @@ async def load_settings_vnc_password(svc: NatsService) -> None:
                 svc._settings.vnc_password = password
                 logger.info("Loaded VNC password from settings table")
     except Exception:
-        logger.warning(
-            "Failed to load VNC password from settings table", exc_info=True
-        )
+        logger.warning("Failed to load VNC password from settings table", exc_info=True)

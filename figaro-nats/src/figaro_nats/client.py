@@ -14,6 +14,7 @@ from nats.js.api import DeliverPolicy, ConsumerConfig
 from opentelemetry import context as otel_context
 
 from opentelemetry import trace
+from opentelemetry.trace import StatusCode
 
 from figaro_nats.tracing import TRACER_NAME, extract_trace_context, inject_trace_context
 
@@ -35,8 +36,13 @@ async def _subscribe_cb(
         ctx = extract_trace_context(msg.headers)
         token = otel_context.attach(ctx)
         try:
-            with _tracer.start_as_current_span(f"nats.recv {subject}"):
-                await handler(data)
+            with _tracer.start_as_current_span(f"nats.recv {subject}") as span:
+                try:
+                    await handler(data)
+                except Exception as exc:
+                    span.set_status(StatusCode.ERROR, str(exc))
+                    span.record_exception(exc)
+                    raise
         finally:
             otel_context.detach(token)
     except Exception:
@@ -55,9 +61,14 @@ async def _subscribe_request_cb(
         ctx = extract_trace_context(msg.headers)
         token = otel_context.attach(ctx)
         try:
-            with _tracer.start_as_current_span(f"nats.recv {subject}"):
-                result = await handler(data)
-                await msg.respond(json.dumps(result or {}).encode())
+            with _tracer.start_as_current_span(f"nats.recv {subject}") as span:
+                try:
+                    result = await handler(data)
+                    await msg.respond(json.dumps(result or {}).encode())
+                except Exception as exc:
+                    span.set_status(StatusCode.ERROR, str(exc))
+                    span.record_exception(exc)
+                    raise
         finally:
             otel_context.detach(token)
     except Exception:
@@ -81,9 +92,14 @@ async def _js_subscribe_cb(
         ctx = extract_trace_context(msg.headers)
         token = otel_context.attach(ctx)
         try:
-            with _tracer.start_as_current_span(f"nats.recv {subject}"):
-                await handler(data)
-                await msg.ack()
+            with _tracer.start_as_current_span(f"nats.recv {subject}") as span:
+                try:
+                    await handler(data)
+                    await msg.ack()
+                except Exception as exc:
+                    span.set_status(StatusCode.ERROR, str(exc))
+                    span.record_exception(exc)
+                    raise
         finally:
             otel_context.detach(token)
     except Exception:

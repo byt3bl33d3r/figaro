@@ -131,9 +131,7 @@ async def api_list_tasks(svc: NatsService, data: dict[str, Any]) -> dict[str, An
                 "session_id": t.session_id,
                 "messages": t.messages,
                 "created_at": t.created_at.isoformat() if t.created_at else None,
-                "completed_at": t.completed_at.isoformat()
-                if t.completed_at
-                else None,
+                "completed_at": t.completed_at.isoformat() if t.completed_at else None,
             }
             for t in tasks
         ]
@@ -321,13 +319,9 @@ async def api_stop_task(svc: NatsService, data: dict[str, Any]) -> dict[str, Any
 
     # Send stop signal to the agent
     if agent_type == "supervisor":
-        await svc.conn.publish(
-            Subjects.supervisor_stop(agent_id), {"task_id": task_id}
-        )
+        await svc.conn.publish(Subjects.supervisor_stop(agent_id), {"task_id": task_id})
     else:
-        await svc.conn.publish(
-            Subjects.worker_stop(agent_id), {"task_id": task_id}
-        )
+        await svc.conn.publish(Subjects.worker_stop(agent_id), {"task_id": task_id})
 
     # Cancel the task
     await svc._task_manager.cancel_task(task_id, "Stopped by user")

@@ -7,14 +7,11 @@ describe('useScheduledTasksStore', () => {
     // Reset store state before each test
     useScheduledTasksStore.setState({
       tasks: new Map(),
-      isLoading: false,
-      error: null,
     });
   });
 
   const createTask = (
     id: string,
-    enabled: boolean = true,
     overrides: Partial<ScheduledTask> = {}
   ): ScheduledTask => ({
     schedule_id: id,
@@ -22,11 +19,20 @@ describe('useScheduledTasksStore', () => {
     prompt: `Prompt for ${id}`,
     start_url: `https://example${id}.com`,
     interval_seconds: 3600,
-    enabled,
+    enabled: true,
     created_at: '2024-01-01T00:00:00Z',
     last_run_at: null,
     next_run_at: '2024-01-01T01:00:00Z',
+    run_at: null,
     run_count: 0,
+    options: {},
+    parallel_workers: 1,
+    max_runs: null,
+    notify_on_complete: false,
+    self_learning: false,
+    self_healing: false,
+    self_learning_max_runs: null,
+    self_learning_run_count: 0,
     ...overrides,
   });
 
@@ -73,10 +79,10 @@ describe('useScheduledTasksStore', () => {
     });
 
     it('should overwrite existing task with same id', () => {
-      const task1 = createTask('1', true, { name: 'Original' });
+      const task1 = createTask('1', { name: 'Original' });
       useScheduledTasksStore.getState().addTask(task1);
 
-      const task2 = createTask('1', true, { name: 'Updated' });
+      const task2 = createTask('1', { name: 'Updated' });
       useScheduledTasksStore.getState().addTask(task2);
 
       expect(useScheduledTasksStore.getState().tasks.get('1')?.name).toBe('Updated');
@@ -86,7 +92,7 @@ describe('useScheduledTasksStore', () => {
 
   describe('updateTask', () => {
     it('should update an existing task', () => {
-      const task = createTask('1', true, { name: 'Original' });
+      const task = createTask('1', { name: 'Original' });
       useScheduledTasksStore.getState().addTask(task);
 
       const updatedTask = { ...task, name: 'Updated', run_count: 5 };
@@ -125,32 +131,6 @@ describe('useScheduledTasksStore', () => {
     });
   });
 
-  describe('setLoading', () => {
-    it('should set loading state to true', () => {
-      useScheduledTasksStore.getState().setLoading(true);
-      expect(useScheduledTasksStore.getState().isLoading).toBe(true);
-    });
-
-    it('should set loading state to false', () => {
-      useScheduledTasksStore.getState().setLoading(true);
-      useScheduledTasksStore.getState().setLoading(false);
-      expect(useScheduledTasksStore.getState().isLoading).toBe(false);
-    });
-  });
-
-  describe('setError', () => {
-    it('should set error message', () => {
-      useScheduledTasksStore.getState().setError('Something went wrong');
-      expect(useScheduledTasksStore.getState().error).toBe('Something went wrong');
-    });
-
-    it('should clear error with null', () => {
-      useScheduledTasksStore.getState().setError('Error');
-      useScheduledTasksStore.getState().setError(null);
-      expect(useScheduledTasksStore.getState().error).toBeNull();
-    });
-  });
-
   describe('getTasksList', () => {
     it('should return all tasks as array', () => {
       const tasks = [createTask('1'), createTask('2'), createTask('3')];
@@ -167,64 +147,22 @@ describe('useScheduledTasksStore', () => {
     });
   });
 
-  describe('getTask', () => {
-    it('should return task by id', () => {
-      const task = createTask('1');
-      useScheduledTasksStore.getState().addTask(task);
-
-      expect(useScheduledTasksStore.getState().getTask('1')).toEqual(task);
-    });
-
-    it('should return undefined for nonexistent task', () => {
-      expect(useScheduledTasksStore.getState().getTask('nonexistent')).toBeUndefined();
-    });
-  });
-
-  describe('getEnabledTasks', () => {
-    it('should return only enabled tasks', () => {
-      useScheduledTasksStore.getState().setTasks([
-        createTask('1', true),
-        createTask('2', false),
-        createTask('3', true),
-        createTask('4', false),
-      ]);
-
-      const enabledTasks = useScheduledTasksStore.getState().getEnabledTasks();
-
-      expect(enabledTasks).toHaveLength(2);
-      expect(enabledTasks.map((t) => t.schedule_id).sort()).toEqual(['1', '3']);
-    });
-
-    it('should return empty array when no enabled tasks', () => {
-      useScheduledTasksStore.getState().setTasks([
-        createTask('1', false),
-        createTask('2', false),
-      ]);
-
-      expect(useScheduledTasksStore.getState().getEnabledTasks()).toEqual([]);
-    });
-
-    it('should return empty array when no tasks', () => {
-      expect(useScheduledTasksStore.getState().getEnabledTasks()).toEqual([]);
-    });
-  });
-
   describe('integration scenarios', () => {
     it('should handle task lifecycle: create, update, toggle, delete', () => {
       // Create
-      const task = createTask('1', true, { run_count: 0 });
+      const task = createTask('1', { run_count: 0 });
       useScheduledTasksStore.getState().addTask(task);
       expect(useScheduledTasksStore.getState().tasks.size).toBe(1);
 
       // Update after execution
       const executed = { ...task, run_count: 1, last_run_at: '2024-01-01T01:00:00Z' };
       useScheduledTasksStore.getState().updateTask(executed);
-      expect(useScheduledTasksStore.getState().getTask('1')?.run_count).toBe(1);
+      expect(useScheduledTasksStore.getState().tasks.get('1')?.run_count).toBe(1);
 
       // Toggle disabled
       const disabled = { ...executed, enabled: false };
       useScheduledTasksStore.getState().updateTask(disabled);
-      expect(useScheduledTasksStore.getState().getEnabledTasks()).toHaveLength(0);
+      expect(useScheduledTasksStore.getState().getTasksList().filter(t => t.enabled)).toHaveLength(0);
 
       // Delete
       useScheduledTasksStore.getState().removeTask('1');
@@ -233,11 +171,11 @@ describe('useScheduledTasksStore', () => {
 
     it('should handle bulk operations', () => {
       // Add multiple tasks
-      const tasks = Array.from({ length: 10 }, (_, i) => createTask(String(i), i % 2 === 0));
+      const tasks = Array.from({ length: 10 }, (_, i) => createTask(String(i), { enabled: i % 2 === 0 }));
       useScheduledTasksStore.getState().setTasks(tasks);
 
       expect(useScheduledTasksStore.getState().getTasksList()).toHaveLength(10);
-      expect(useScheduledTasksStore.getState().getEnabledTasks()).toHaveLength(5);
+      expect(useScheduledTasksStore.getState().getTasksList().filter(t => t.enabled)).toHaveLength(5);
 
       // Clear all
       useScheduledTasksStore.getState().setTasks([]);

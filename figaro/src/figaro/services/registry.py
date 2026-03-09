@@ -213,14 +213,6 @@ class Registry:
                 if conn.client_type == ClientType.WORKER
             ]
 
-    async def get_ui_clients(self) -> list[Connection]:
-        async with self._lock:
-            return [
-                conn
-                for conn in self._connections.values()
-                if conn.client_type == ClientType.UI
-            ]
-
     async def get_idle_worker(self) -> Connection | None:
         """Get an idle worker without claiming it."""
         async with self._lock:
@@ -263,17 +255,6 @@ class Registry:
                 for conn in self._connections.values()
                 if conn.client_type == ClientType.SUPERVISOR
             ]
-
-    async def get_idle_supervisor(self) -> Connection | None:
-        """Get an idle supervisor without claiming it."""
-        async with self._lock:
-            for conn in self._connections.values():
-                if (
-                    conn.client_type == ClientType.SUPERVISOR
-                    and conn.status == WorkerStatus.IDLE
-                ):
-                    return conn
-            return None
 
     async def claim_idle_supervisor(self) -> Connection | None:
         """Atomically find and claim an idle supervisor by setting status to BUSY."""

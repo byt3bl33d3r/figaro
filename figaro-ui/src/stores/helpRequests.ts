@@ -8,14 +8,11 @@ interface HelpRequestsState {
   // Actions
   addRequest: (request: HelpRequest) => void;
   updateRequestStatus: (requestId: string, status: HelpRequestStatus, source?: string) => void;
-  removeRequest: (requestId: string) => void;
-  clearRequests: () => void;
   setActiveRequestId: (id: string | null) => void;
 
   // Selectors
   getRequest: (requestId: string) => HelpRequest | undefined;
   getPendingRequests: () => HelpRequest[];
-  getRequestsByWorker: (workerId: string) => HelpRequest[];
 }
 
 export const useHelpRequestsStore = create<HelpRequestsState>((set, get) => ({
@@ -46,18 +43,6 @@ export const useHelpRequestsStore = create<HelpRequestsState>((set, get) => ({
     });
   },
 
-  removeRequest: (requestId) => {
-    set((state) => {
-      const newRequests = new Map(state.requests);
-      newRequests.delete(requestId);
-      return { requests: newRequests };
-    });
-  },
-
-  clearRequests: () => {
-    set({ requests: new Map() });
-  },
-
   setActiveRequestId: (id) => {
     set({ activeRequestId: id });
   },
@@ -70,7 +55,4 @@ export const useHelpRequestsStore = create<HelpRequestsState>((set, get) => ({
     return Array.from(get().requests.values()).filter((r) => r.status === 'pending');
   },
 
-  getRequestsByWorker: (workerId) => {
-    return Array.from(get().requests.values()).filter((r) => r.worker_id === workerId);
-  },
 }));
