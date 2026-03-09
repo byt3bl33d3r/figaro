@@ -45,7 +45,9 @@ class TestConnectClose:
         mock_nc.is_connected = True
         mock_nc.jetstream.return_value = AsyncMock()
 
-        with patch("figaro_nats.client.nats.connect", return_value=mock_nc) as mock_connect:
+        with patch(
+            "figaro_nats.client.nats.connect", return_value=mock_nc
+        ) as mock_connect:
             await conn.connect()
 
             mock_connect.assert_called_once()
@@ -54,7 +56,9 @@ class TestConnectClose:
             assert conn._js is not None
 
     @pytest.mark.asyncio
-    async def test_close_drains_connection(self, connected_conn: NatsConnection) -> None:
+    async def test_close_drains_connection(
+        self, connected_conn: NatsConnection
+    ) -> None:
         nc = connected_conn._nc
         assert nc is not None
         nc.is_closed = False
@@ -64,7 +68,9 @@ class TestConnectClose:
         nc.drain.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_close_noop_when_already_closed(self, connected_conn: NatsConnection) -> None:
+    async def test_close_noop_when_already_closed(
+        self, connected_conn: NatsConnection
+    ) -> None:
         nc = connected_conn._nc
         assert nc is not None
         nc.is_closed = True
@@ -99,35 +105,40 @@ class TestPublish:
 
         await connected_conn.publish("test.subject", data)
 
-        connected_conn.nc.publish.assert_called_once_with(
-            "test.subject",
-            json.dumps(data).encode(),
-        )
+        connected_conn.nc.publish.assert_called_once()
+        call_args = connected_conn.nc.publish.call_args
+        assert call_args[0][0] == "test.subject"
+        assert call_args[0][1] == json.dumps(data).encode()
+        assert "headers" in call_args[1]
 
     @pytest.mark.asyncio
-    async def test_publish_sends_empty_dict_when_no_data(self, connected_conn: NatsConnection) -> None:
+    async def test_publish_sends_empty_dict_when_no_data(
+        self, connected_conn: NatsConnection
+    ) -> None:
         await connected_conn.publish("test.subject")
 
-        connected_conn.nc.publish.assert_called_once_with(
-            "test.subject",
-            json.dumps({}).encode(),
-        )
+        connected_conn.nc.publish.assert_called_once()
+        call_args = connected_conn.nc.publish.call_args
+        assert call_args[0][0] == "test.subject"
+        assert call_args[0][1] == json.dumps({}).encode()
 
     @pytest.mark.asyncio
     async def test_publish_none_data(self, connected_conn: NatsConnection) -> None:
         await connected_conn.publish("test.subject", None)
 
-        connected_conn.nc.publish.assert_called_once_with(
-            "test.subject",
-            json.dumps({}).encode(),
-        )
+        connected_conn.nc.publish.assert_called_once()
+        call_args = connected_conn.nc.publish.call_args
+        assert call_args[0][0] == "test.subject"
+        assert call_args[0][1] == json.dumps({}).encode()
 
 
 class TestSubscribe:
     """Test subscribe deserializes JSON and calls handler."""
 
     @pytest.mark.asyncio
-    async def test_subscribe_registers_callback(self, connected_conn: NatsConnection) -> None:
+    async def test_subscribe_registers_callback(
+        self, connected_conn: NatsConnection
+    ) -> None:
         handler = AsyncMock()
 
         await connected_conn.subscribe("test.subject", handler)
@@ -137,7 +148,9 @@ class TestSubscribe:
         assert call_kwargs[0][0] == "test.subject"
 
     @pytest.mark.asyncio
-    async def test_subscribe_with_queue_group(self, connected_conn: NatsConnection) -> None:
+    async def test_subscribe_with_queue_group(
+        self, connected_conn: NatsConnection
+    ) -> None:
         handler = AsyncMock()
 
         await connected_conn.subscribe("test.subject", handler, queue="workers")
@@ -147,11 +160,15 @@ class TestSubscribe:
         assert call_kwargs[1]["queue"] == "workers"
 
     @pytest.mark.asyncio
-    async def test_subscribe_callback_deserializes_json(self, connected_conn: NatsConnection) -> None:
+    async def test_subscribe_callback_deserializes_json(
+        self, connected_conn: NatsConnection
+    ) -> None:
         handler = AsyncMock()
         captured_cb = None
 
-        async def fake_subscribe(subject: str, queue: str | None = None, cb: object = None) -> MagicMock:
+        async def fake_subscribe(
+            subject: str, queue: str | None = None, cb: object = None
+        ) -> MagicMock:
             nonlocal captured_cb
             captured_cb = cb
             return MagicMock()
@@ -171,11 +188,15 @@ class TestSubscribe:
         handler.assert_called_once_with({"key": "value"})
 
     @pytest.mark.asyncio
-    async def test_subscribe_callback_handles_empty_data(self, connected_conn: NatsConnection) -> None:
+    async def test_subscribe_callback_handles_empty_data(
+        self, connected_conn: NatsConnection
+    ) -> None:
         handler = AsyncMock()
         captured_cb = None
 
-        async def fake_subscribe(subject: str, queue: str | None = None, cb: object = None) -> MagicMock:
+        async def fake_subscribe(
+            subject: str, queue: str | None = None, cb: object = None
+        ) -> MagicMock:
             nonlocal captured_cb
             captured_cb = cb
             return MagicMock()
@@ -192,11 +213,15 @@ class TestSubscribe:
         handler.assert_called_once_with({})
 
     @pytest.mark.asyncio
-    async def test_subscribe_callback_handles_handler_exception(self, connected_conn: NatsConnection) -> None:
+    async def test_subscribe_callback_handles_handler_exception(
+        self, connected_conn: NatsConnection
+    ) -> None:
         handler = AsyncMock(side_effect=ValueError("boom"))
         captured_cb = None
 
-        async def fake_subscribe(subject: str, queue: str | None = None, cb: object = None) -> MagicMock:
+        async def fake_subscribe(
+            subject: str, queue: str | None = None, cb: object = None
+        ) -> MagicMock:
             nonlocal captured_cb
             captured_cb = cb
             return MagicMock()
@@ -216,60 +241,69 @@ class TestJsPublish:
     """Test js_publish goes through JetStream."""
 
     @pytest.mark.asyncio
-    async def test_js_publish_sends_via_jetstream(self, connected_conn: NatsConnection) -> None:
+    async def test_js_publish_sends_via_jetstream(
+        self, connected_conn: NatsConnection
+    ) -> None:
         data = {"task_id": "t1", "status": "assigned"}
 
         await connected_conn.js_publish("figaro.task.t1.assigned", data)
 
-        connected_conn.js.publish.assert_called_once_with(
-            "figaro.task.t1.assigned",
-            json.dumps(data).encode(),
-        )
+        connected_conn.js.publish.assert_called_once()
+        call_args = connected_conn.js.publish.call_args
+        assert call_args[0][0] == "figaro.task.t1.assigned"
+        assert call_args[0][1] == json.dumps(data).encode()
+        assert "headers" in call_args[1]
 
     @pytest.mark.asyncio
     async def test_js_publish_empty_data(self, connected_conn: NatsConnection) -> None:
         await connected_conn.js_publish("figaro.task.t1.assigned")
 
-        connected_conn.js.publish.assert_called_once_with(
-            "figaro.task.t1.assigned",
-            json.dumps({}).encode(),
-        )
+        connected_conn.js.publish.assert_called_once()
+        call_args = connected_conn.js.publish.call_args
+        assert call_args[0][0] == "figaro.task.t1.assigned"
+        assert call_args[0][1] == json.dumps({}).encode()
 
 
 class TestRequest:
     """Test request/reply pattern."""
 
     @pytest.mark.asyncio
-    async def test_request_sends_and_receives(self, connected_conn: NatsConnection) -> None:
+    async def test_request_sends_and_receives(
+        self, connected_conn: NatsConnection
+    ) -> None:
         response_msg = MagicMock()
         response_msg.data = json.dumps({"status": "ok"}).encode()
         connected_conn.nc.request.return_value = response_msg
 
         result = await connected_conn.request("test.subject", {"query": "data"})
 
-        connected_conn.nc.request.assert_called_once_with(
-            "test.subject",
-            json.dumps({"query": "data"}).encode(),
-            timeout=10.0,
-        )
+        connected_conn.nc.request.assert_called_once()
+        call_args = connected_conn.nc.request.call_args
+        assert call_args[0][0] == "test.subject"
+        assert call_args[0][1] == json.dumps({"query": "data"}).encode()
+        assert call_args[1]["timeout"] == 10.0
+        assert "headers" in call_args[1]
         assert result == {"status": "ok"}
 
     @pytest.mark.asyncio
-    async def test_request_with_custom_timeout(self, connected_conn: NatsConnection) -> None:
+    async def test_request_with_custom_timeout(
+        self, connected_conn: NatsConnection
+    ) -> None:
         response_msg = MagicMock()
         response_msg.data = json.dumps({}).encode()
         connected_conn.nc.request.return_value = response_msg
 
         await connected_conn.request("test.subject", timeout=10.0)
 
-        connected_conn.nc.request.assert_called_once_with(
-            "test.subject",
-            json.dumps({}).encode(),
-            timeout=10.0,
-        )
+        connected_conn.nc.request.assert_called_once()
+        call_args = connected_conn.nc.request.call_args
+        assert call_args[0][0] == "test.subject"
+        assert call_args[1]["timeout"] == 10.0
 
     @pytest.mark.asyncio
-    async def test_request_with_empty_response(self, connected_conn: NatsConnection) -> None:
+    async def test_request_with_empty_response(
+        self, connected_conn: NatsConnection
+    ) -> None:
         response_msg = MagicMock()
         response_msg.data = b""
         connected_conn.nc.request.return_value = response_msg
@@ -295,7 +329,9 @@ class TestErrorHandling:
     async def test_connect_passes_reconnect_options(self) -> None:
         conn = NatsConnection(url="nats://myhost:4222", name="my-service")
 
-        with patch("figaro_nats.client.nats.connect", new_callable=AsyncMock) as mock_connect:
+        with patch(
+            "figaro_nats.client.nats.connect", new_callable=AsyncMock
+        ) as mock_connect:
             mock_nc = AsyncMock()
             mock_nc.is_closed = False
             mock_nc.jetstream.return_value = AsyncMock()

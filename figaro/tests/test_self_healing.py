@@ -225,9 +225,7 @@ class TestMaybeHealFailedTask:
         assert len(healer_tasks) == 0
 
     @pytest.mark.asyncio
-    async def test_healing_skipped_for_healer_source(
-        self, nats_service, task_manager
-    ):
+    async def test_healing_skipped_for_healer_source(self, nats_service, task_manager):
         """Tasks with source='healer' are never themselves healed (loop prevention)."""
 
         # 1. Create a healer task that itself failed
@@ -674,10 +672,14 @@ class TestMaybeOptimizeScheduledTask:
         nats_service.publish_supervisor_task = AsyncMock()
 
         # 6. Run
-        with patch(
-            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
-        ), patch(
-            "figaro.services.nats_service.ScheduledTaskRepository", return_value=mock_sched_repo
+        with (
+            patch(
+                "figaro.services.nats_service.TaskRepository", return_value=mock_repo
+            ),
+            patch(
+                "figaro.services.nats_service.ScheduledTaskRepository",
+                return_value=mock_sched_repo,
+            ),
         ):
             await nats_service._maybe_optimize_scheduled_task(original_task.task_id)
 
@@ -738,10 +740,14 @@ class TestMaybeOptimizeScheduledTask:
         nats_service.publish_supervisor_task = AsyncMock()
 
         # 6. Run
-        with patch(
-            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
-        ), patch(
-            "figaro.services.nats_service.ScheduledTaskRepository", return_value=mock_sched_repo
+        with (
+            patch(
+                "figaro.services.nats_service.TaskRepository", return_value=mock_repo
+            ),
+            patch(
+                "figaro.services.nats_service.ScheduledTaskRepository",
+                return_value=mock_sched_repo,
+            ),
         ):
             await nats_service._maybe_optimize_scheduled_task(original_task.task_id)
 

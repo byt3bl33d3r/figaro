@@ -16,7 +16,9 @@ def registry():
     return Registry()
 
 
-def _make_settings(desktop_workers: str = "[]", nats_url: str = "nats://localhost:4222"):
+def _make_settings(
+    desktop_workers: str = "[]", nats_url: str = "nats://localhost:4222"
+):
     """Build a minimal Settings-like mock."""
     settings = MagicMock()
     settings.desktop_workers = desktop_workers
@@ -65,7 +67,9 @@ async def test_startup_loads_from_db(session_factory, db_session, registry):
     await db_session.commit()
 
     # Create service with empty env setting so only DB workers are loaded
-    svc = _make_nats_service(registry, session_factory=session_factory, desktop_workers="[]")
+    svc = _make_nats_service(
+        registry, session_factory=session_factory, desktop_workers="[]"
+    )
 
     await svc._register_desktop_workers()
 
@@ -87,7 +91,9 @@ async def test_startup_seeds_env_to_db(session_factory, db_session, registry):
     """Env-var entries should be upserted into DB during startup and registered
     in the in-memory registry."""
     env_json = json.dumps([{"id": "env-1", "novnc_url": "http://env1:6080"}])
-    svc = _make_nats_service(registry, session_factory=session_factory, desktop_workers=env_json)
+    svc = _make_nats_service(
+        registry, session_factory=session_factory, desktop_workers=env_json
+    )
 
     await svc._register_desktop_workers()
 
@@ -129,10 +135,12 @@ async def test_api_register_persists_to_db(session_factory, db_session, registry
     """_api_register_desktop_worker should persist the new worker to the DB."""
     svc = _make_nats_service(registry, session_factory=session_factory)
 
-    result = await svc._api_register_desktop_worker({
-        "worker_id": "d1",
-        "novnc_url": "http://d1:6080",
-    })
+    result = await svc._api_register_desktop_worker(
+        {
+            "worker_id": "d1",
+            "novnc_url": "http://d1:6080",
+        }
+    )
 
     assert result == {"status": "ok"}
 
@@ -191,10 +199,12 @@ async def test_api_update_persists_to_db(session_factory, db_session, registry):
         await repo.create(worker_id="d1", novnc_url="http://d1:6080")
         await session.commit()
 
-    result = await svc._api_update_desktop_worker({
-        "worker_id": "d1",
-        "novnc_url": "http://new:6080",
-    })
+    result = await svc._api_update_desktop_worker(
+        {
+            "worker_id": "d1",
+            "novnc_url": "http://new:6080",
+        }
+    )
     assert result == {"status": "ok"}
 
     # Verify DB has the updated URL

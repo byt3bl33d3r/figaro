@@ -39,11 +39,15 @@ class TestDynamicSubjects:
 
     def test_deregister(self) -> None:
         assert Subjects.deregister("worker", "w1") == "figaro.deregister.worker.w1"
-        assert Subjects.deregister("supervisor", "s1") == "figaro.deregister.supervisor.s1"
+        assert (
+            Subjects.deregister("supervisor", "s1") == "figaro.deregister.supervisor.s1"
+        )
 
     def test_heartbeat(self) -> None:
         assert Subjects.heartbeat("worker", "w1") == "figaro.heartbeat.worker.w1"
-        assert Subjects.heartbeat("supervisor", "s1") == "figaro.heartbeat.supervisor.s1"
+        assert (
+            Subjects.heartbeat("supervisor", "s1") == "figaro.heartbeat.supervisor.s1"
+        )
 
     def test_worker_task(self) -> None:
         assert Subjects.worker_task("worker-001") == "figaro.worker.worker-001.task"
@@ -79,7 +83,9 @@ class TestDynamicSubjects:
         assert Subjects.gateway_question("discord") == "figaro.gateway.discord.question"
 
     def test_gateway_register(self) -> None:
-        assert Subjects.gateway_register("telegram") == "figaro.gateway.telegram.register"
+        assert (
+            Subjects.gateway_register("telegram") == "figaro.gateway.telegram.register"
+        )
 
 
 class TestApiSubjects:

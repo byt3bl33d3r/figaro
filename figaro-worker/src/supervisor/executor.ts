@@ -7,6 +7,7 @@ import {
 import type { NatsClient } from "../nats/client";
 import { LoopDetectionSession, buildLoopDetectionHooks, type LoopDetectionConfig } from "../shared/loop-detection";
 import { serializeMessage } from "../shared/serialize";
+import { traced } from "../tracing/tracer";
 import { HelpRequestHandler } from "../worker/help-request";
 import {
   formatSupervisorPrompt,
@@ -57,29 +58,32 @@ export class SupervisorExecutor {
   }
 
   async handleTask(payload: Record<string, unknown>): Promise<void> {
-    const taskId = payload.task_id as string;
-    const prompt = (payload.prompt as string) ?? "";
-    const options = (payload.options ?? {}) as Record<string, unknown>;
-    const sourceMetadata = payload.source_metadata as Record<string, unknown> | null | undefined;
+    await traced("supervisor.handle_task", async (span) => {
+      const taskId = payload.task_id as string;
+      const prompt = (payload.prompt as string) ?? "";
+      const options = (payload.options ?? {}) as Record<string, unknown>;
+      const sourceMetadata = payload.source_metadata as Record<string, unknown> | null | undefined;
 
-    if (!taskId) {
-      console.error("[supervisor] Received task without task_id");
-      return;
-    }
+      if (!taskId) {
+        console.error("[supervisor] Received task without task_id");
+        return;
+      }
 
-    console.log(`[supervisor] Processing task ${taskId}: ${prompt.slice(0, 50)}...`);
+      span.setAttribute("task.id", taskId);
+      console.log(`[supervisor] Processing task ${taskId}: ${prompt.slice(0, 50)}...`);
 
-    const session: TaskSession = {
-      taskId,
-      prompt,
-      options,
-      sourceMetadata,
-    };
-    this.sessions.set(taskId, session);
+      const session: TaskSession = {
+        taskId,
+        prompt,
+        options,
+        sourceMetadata,
+      };
+      this.sessions.set(taskId, session);
 
-    // Fire and forget — allows concurrent task processing
-    this.runSession(session).catch((e) => {
-      console.error(`[supervisor] Unhandled error in session ${taskId}: ${e}`);
+      // Fire and forget — allows concurrent task processing
+      this.runSession(session).catch((e) => {
+        console.error(`[supervisor] Unhandled error in session ${taskId}: ${e}`);
+      });
     });
   }
 

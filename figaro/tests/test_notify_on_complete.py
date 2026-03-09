@@ -107,9 +107,7 @@ class TestMaybeNotifyGateway:
     """Tests for NatsService._maybe_notify_gateway."""
 
     @pytest.mark.asyncio
-    async def test_sends_completion_notification(
-        self, nats_service, mock_scheduler
-    ):
+    async def test_sends_completion_notification(self, nats_service, mock_scheduler):
         """When a scheduler task completes and notify_on_complete is True,
         a message is published to each registered gateway channel."""
         task_model = _make_task_model()
@@ -131,13 +129,14 @@ class TestMaybeNotifyGateway:
 
         nats_service.publish_gateway_send.assert_called_once_with(
             "telegram",
-            {"chat_id": "", "text": "Scheduled task *Daily Report* completed:\nReport generated successfully"},
+            {
+                "chat_id": "",
+                "text": "Scheduled task *Daily Report* completed:\nReport generated successfully",
+            },
         )
 
     @pytest.mark.asyncio
-    async def test_sends_error_notification(
-        self, nats_service, mock_scheduler
-    ):
+    async def test_sends_error_notification(self, nats_service, mock_scheduler):
         """When a scheduler task fails and notify_on_complete is True,
         a failure message is published to the gateway."""
         task_model = _make_task_model()
@@ -159,7 +158,10 @@ class TestMaybeNotifyGateway:
 
         nats_service.publish_gateway_send.assert_called_once_with(
             "telegram",
-            {"chat_id": "", "text": "Scheduled task *Daily Report* failed:\nElement not found"},
+            {
+                "chat_id": "",
+                "text": "Scheduled task *Daily Report* failed:\nElement not found",
+            },
         )
 
     @pytest.mark.asyncio
@@ -180,16 +182,12 @@ class TestMaybeNotifyGateway:
         with patch(
             "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
-            await nats_service._maybe_notify_gateway(
-                "task-1", result="done"
-            )
+            await nats_service._maybe_notify_gateway("task-1", result="done")
 
         nats_service.publish_gateway_send.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_non_scheduler_tasks(
-        self, nats_service, mock_scheduler
-    ):
+    async def test_skips_non_scheduler_tasks(self, nats_service, mock_scheduler):
         """No notification sent for tasks not originating from the scheduler."""
         task_model = _make_task_model(source="api", scheduled_task_id=None)
         mock_repo = _prepare_db_mocks(nats_service, task_model)
@@ -200,17 +198,13 @@ class TestMaybeNotifyGateway:
         with patch(
             "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
-            await nats_service._maybe_notify_gateway(
-                "task-1", result="done"
-            )
+            await nats_service._maybe_notify_gateway("task-1", result="done")
 
         mock_scheduler.get_scheduled_task.assert_not_called()
         nats_service.publish_gateway_send.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_skips_when_no_gateway_channels(
-        self, nats_service, mock_scheduler
-    ):
+    async def test_skips_when_no_gateway_channels(self, nats_service, mock_scheduler):
         """No notification sent when no gateway channels are registered."""
         task_model = _make_task_model()
         mock_repo = _prepare_db_mocks(nats_service, task_model)
@@ -225,16 +219,12 @@ class TestMaybeNotifyGateway:
         with patch(
             "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
-            await nats_service._maybe_notify_gateway(
-                "task-1", result="done"
-            )
+            await nats_service._maybe_notify_gateway("task-1", result="done")
 
         nats_service.publish_gateway_send.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_notifies_multiple_channels(
-        self, nats_service, mock_scheduler
-    ):
+    async def test_notifies_multiple_channels(self, nats_service, mock_scheduler):
         """Notification is sent to all registered gateway channels."""
         task_model = _make_task_model()
         mock_repo = _prepare_db_mocks(nats_service, task_model)
@@ -249,9 +239,7 @@ class TestMaybeNotifyGateway:
         with patch(
             "figaro.services.nats_service.TaskRepository", return_value=mock_repo
         ):
-            await nats_service._maybe_notify_gateway(
-                "task-1", result="done"
-            )
+            await nats_service._maybe_notify_gateway("task-1", result="done")
 
         assert nats_service.publish_gateway_send.call_count == 2
         called_channels = {

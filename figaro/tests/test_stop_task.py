@@ -143,7 +143,11 @@ class TestApiStopTask:
         # Verify broadcast_supervisors called (supervisors list broadcast)
         nats_service.conn.publish.assert_any_call(
             Subjects.BROADCAST_SUPERVISORS,
-            {"supervisors": [{"id": "supervisor-1", "status": "idle", "capabilities": []}]},
+            {
+                "supervisors": [
+                    {"id": "supervisor-1", "status": "idle", "capabilities": []}
+                ]
+            },
         )
 
     @pytest.mark.asyncio
@@ -223,11 +227,13 @@ class TestHandleTaskErrorCancelledGuard:
         await task_manager.cancel_task(task.task_id, "Stopped by user")
 
         # Now simulate an error event arriving after cancellation
-        await nats_service._handle_task_error({
-            "task_id": task.task_id,
-            "error": "Process killed",
-            "worker_id": "worker-1",
-        })
+        await nats_service._handle_task_error(
+            {
+                "task_id": task.task_id,
+                "error": "Process killed",
+                "worker_id": "worker-1",
+            }
+        )
 
         # Task should still be CANCELLED, not FAILED
         updated = await task_manager.get_task(task.task_id)
@@ -246,11 +252,13 @@ class TestHandleTaskErrorCancelledGuard:
         task = await task_manager.create_task(prompt="Will fail normally")
         await task_manager.assign_task(task.task_id, "worker-1")
 
-        await nats_service._handle_task_error({
-            "task_id": task.task_id,
-            "error": "Something broke",
-            "worker_id": "worker-1",
-        })
+        await nats_service._handle_task_error(
+            {
+                "task_id": task.task_id,
+                "error": "Something broke",
+                "worker_id": "worker-1",
+            }
+        )
 
         # Task should be FAILED
         updated = await task_manager.get_task(task.task_id)

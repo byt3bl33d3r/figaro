@@ -11,6 +11,10 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.56.0",
+    "@opentelemetry/resources": "^1.29.0",
+    "@opentelemetry/sdk-trace-web": "^1.29.0",
     "guacamole-common-js": "^1.5.0",
     "nats.ws": "^1.30.3",
     "react": "^18.2.0",

@@ -11,6 +11,7 @@ from guapy import create_server
 from guapy.models import ClientOptions, CryptConfig, GuacdOptions
 
 from figaro.config import Settings
+from figaro.tracing import init_tracing
 from figaro.db import create_engine, create_session_factory
 from figaro.db.models import Base
 from figaro.routes import (
@@ -138,5 +139,8 @@ def create_app() -> FastAPI:
 
     # Serve static files if configured (must be last - catch-all route)
     setup_static_routes(orchestrator_app, settings.static_dir)
+
+    # Initialize OpenTelemetry tracing
+    init_tracing(orchestrator_app, engine=engine)
 
     return orchestrator_app

@@ -37,6 +37,8 @@ When adding new features or modifying existing ones, always ask: "What happens i
 cd figaro-nats
 uv sync --frozen
 uv run pytest             # Run tests
+uv run ruff check .       # Lint
+uv run ruff format .      # Format
 ```
 
 ### Orchestrator (figaro/)
@@ -71,6 +73,8 @@ cd figaro-gateway
 uv sync --frozen
 uv run figaro-gateway     # Start gateway service
 uv run pytest             # Run tests
+uv run ruff check .       # Lint
+uv run ruff format .      # Format
 ```
 
 ### UI (figaro-ui/)
@@ -184,6 +188,9 @@ figaro.gateway.{channel}.register         # Channel gateway registers availabili
 - `client.py`: `NatsConnection` class wrapping `nats.aio.client.Client` with JSON serialization, auto-reconnect, typed publish/subscribe/request/subscribe_request methods for both Core NATS and JetStream
 - `subjects.py`: `Subjects` class with all NATS subject constants, builder functions, and API request/reply subjects
 - `streams.py`: `ensure_streams(js)` creates/updates the TASKS JetStream stream (7-day retention)
+- `tracing.py`: `init_tracing(service_name)`, `inject_trace_context()`, `extract_trace_context()`, `traced()` decorator — core OTel setup and W3C trace context propagation over NATS headers
+- `trace_chain.py`: `get_span_chain()`, `assert_span_chain()` — builds deterministic span chains from flat span lists for test assertions
+- `jaeger.py`: `get_trace_spans(trace_id)` — polls Jaeger HTTP API until span count stabilizes, used by live tracing tests
 
 ### Figaro Orchestrator (figaro/)
 - `app.py`: FastAPI app factory with lifespan, mounts routers (config, guacamole token, VNC proxy) and guapy WebSocket server at `/guacamole`, starts NatsService
@@ -198,6 +205,7 @@ figaro.gateway.{channel}.register         # Channel gateway registers availabili
 - `services/vnc_client.py`: Low-level VNC interaction via `asyncvnc` — `vnc_screenshot()`, `vnc_type()`, `vnc_key()`, `vnc_click()`. Used by the `figaro.api.vnc` handler to execute supervisor VNC tool requests against worker desktops
 - `db/models.py`: SQLAlchemy models (TaskModel, ScheduledTaskModel, HelpRequestModel, etc.)
 - `db/repositories/`: Data access layer for each model type
+- `tracing.py`: `init_tracing(app, engine)` — wraps `figaro_nats.init_tracing("figaro-orchestrator")` and adds FastAPI, SQLAlchemy, and logging auto-instrumentation
 - `config.py`: Settings via `FIGARO_*` env vars (includes `nats_url`, `nats_ws_url`, `guacd_host`, `guacd_port`, `encryption_key`)
 
 ### Figaro Worker (figaro-worker/) — Bun/TypeScript
@@ -222,6 +230,9 @@ The worker and supervisor are the same Bun/TypeScript binary. The `--supervisor`
 - `src/shared/serialize.ts`: Message serialization shared between worker and supervisor
 - `src/config.ts`: Settings via `WORKER_*` env vars (worker mode) or `SUPERVISOR_*` env vars (supervisor mode)
 - `src/types.ts`: TypeScript type definitions
+- `src/tracing/tracer.ts`: `initTracing()`, `traced()`, custom `FetchOTLPExporter` (uses `fetch()` instead of Node HTTP for Bun compatibility, uses `sdk-trace-base` instead of `sdk-trace-node`)
+- `src/tracing/propagation.ts`: `injectTraceContext()`, `extractTraceContext()` — custom `TextMapGetter`/`TextMapSetter` bridging OTel propagation to NATS `MsgHdrs`
+- `src/tracing/trace-chain.ts`: TypeScript port of `figaro_nats.trace_chain` for cross-language span chain assertions
 
 ### Legacy Implementations (legacy/)
 The original Python supervisor (`legacy/figaro-supervisor/`) and Python worker (`legacy/figaro-worker/`) implementations, kept for reference. Use the Bun/TypeScript worker above for active development.
@@ -248,6 +259,7 @@ Adding a new channel (e.g. WhatsApp):
 - `stores/`: Zustand stores for workers, messages, connection, scheduledTasks, helpRequests, supervisors
 - `components/`: Dashboard, DesktopGrid, VNCViewer (uses useGuacamole), ChatInput, EventStream
 - `types/guacamole.d.ts`: TypeScript type declarations for `guacamole-common-js`
+- `tracing.ts`: `initTracing()`, `createTaskSpan()`, `injectTraceContext()` — uses `WebTracerProvider` (browser), forces XHR transport to avoid CORS issues with `sendBeacon`
 
 ## HTTP Endpoints (Minimal)
 
@@ -280,6 +292,28 @@ Desktop streaming uses Apache Guacamole (replacing the previous noVNC approach):
 - `docker/Dockerfile.guacd`: Multi-arch guacd build from source (Guacamole 1.6.0)
 - `docker/Dockerfile.test-target`: Lightweight Alpine container with SSH + telnet for testing non-VNC protocols
 
+## Distributed Tracing (OpenTelemetry)
+
+All services are instrumented with OpenTelemetry for end-to-end distributed tracing. Traces propagate across NATS messages using W3C Trace Context (`traceparent` header).
+
+**Architecture:**
+- **Protocol:** W3C Trace Context over NATS message headers
+- **Export:** OTLP/HTTP JSON (`/v1/traces`) to Jaeger
+- **Tracer name:** `"figaro"` (all services)
+- **Service names:** `figaro-ui`, `figaro-orchestrator`, `figaro-worker`, `figaro-supervisor`
+- **No-op when disabled:** All `initTracing()` functions are no-ops when the OTLP endpoint env var is unset
+
+**Trace flow:** UI creates a root span (`ui.task_submission`) → injects `traceparent` into NATS headers → orchestrator extracts context, creates child spans, injects into task assignment → worker/supervisor extracts, creates child spans, injects into completion/error messages → orchestrator extracts from completion and creates final child spans. All spans share the same trace ID.
+
+**Span naming convention:** `component.operation` (e.g., `orchestrator.api_create_task`, `worker.execute_task`, `task_manager.complete_task`, `registry.claim_idle_worker`).
+
+**Span chain testing utilities** (`figaro-nats`): The `get_span_chain()` function builds a deterministic depth-first chain from flat span lists, filtering out auto-instrumented spans (HTTP, SQLAlchemy) by checking for known prefixes (`orchestrator.`, `worker.`, `task_manager.`, `registry.`, `supervisor.`, `ui.`). Consecutive duplicate spans at the same depth are normalized to `"name (repeat)"`. `assert_span_chain()` compares actual vs expected with unified diff output.
+
+**Bun/TypeScript compatibility notes:**
+- Worker uses `BasicTracerProvider` from `@opentelemetry/sdk-trace-base` (not `NodeTracerProvider` from `sdk-trace-node`) for Bun compatibility
+- Worker uses a custom `FetchOTLPExporter` that serializes spans to OTLP JSON and exports via `fetch()`, avoiding CJS class inheritance issues with `@opentelemetry/exporter-trace-otlp-http` under Bun's bundler
+- UI uses `WebTracerProvider` from `@opentelemetry/sdk-trace-web` with explicit empty `headers: {}` on the exporter to force XHR transport (avoids CORS errors from `sendBeacon` including credentials)
+
 ## Testing
 
 Tests use pytest-asyncio with SQLite in-memory for database tests. NATS connections are mocked in tests.
@@ -295,6 +329,16 @@ Tests use pytest-asyncio with SQLite in-memory for database tests. NATS connecti
 **Gateway fixtures**: Mock `NatsConnection` and `Channel` implementations.
 
 **UI tests**: Vitest with `natsManager.request()` mocked via `vi.spyOn` for NATS request/reply operations.
+
+**Live tracing tests** (`figaro/tests/test_trace_live.py`): End-to-end tests marked `@pytest.mark.live` that verify distributed trace propagation across services. Require running NATS (`nats://nats:4222`) and Jaeger (`http://jaeger:16686`); auto-skip when infrastructure is unavailable. Tests submit real tasks via NATS, wait for completion/error events, poll Jaeger for the trace via `get_trace_spans()`, build the span chain, and compare against JSON snapshots in `tests/snapshots/`. Uses `SimpleSpanProcessor` (immediate flush) for deterministic test output.
+
+```bash
+cd figaro
+uv run pytest -m live              # Run live tracing tests
+uv run pytest -m live --record     # Re-record span chain snapshots
+```
+
+**Span chain unit tests** (`figaro-nats/tests/test_trace_chain.py`): Pure unit tests for the `get_span_chain()` / `assert_span_chain()` utilities — deterministic ordering, repeat normalization, auto-instrumented span filtering, empty input handling.
 
 ## After Every Code Change
 
@@ -353,6 +397,8 @@ shellcheck <file>.sh     # Lint (required)
 | `GATEWAY_TELEGRAM_BOT_TOKEN` | Gateway | Telegram bot token |
 | `GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS` | Gateway | Allowed Telegram chat IDs (JSON array) |
 | `VITE_NATS_WS_URL` | UI | NATS WebSocket URL (default: ws://localhost:8443) |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | Orchestrator, Worker, Gateway | OTLP endpoint for trace export (tracing disabled if unset) |
+| `VITE_OTEL_EXPORTER_OTLP_ENDPOINT` | UI | OTLP endpoint for browser trace export (tracing disabled if unset) |
 
 ## Message Flow
 

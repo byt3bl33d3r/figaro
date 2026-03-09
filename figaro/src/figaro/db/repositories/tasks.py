@@ -158,7 +158,9 @@ class TaskRepository:
         )
         return result.scalar_one_or_none()
 
-    async def start(self, task_id: str, session_id: str | None = None) -> TaskModel | None:
+    async def start(
+        self, task_id: str, session_id: str | None = None
+    ) -> TaskModel | None:
         """Mark a task as running.
 
         Args:
@@ -208,9 +210,7 @@ class TaskRepository:
         )
         return result.scalar_one_or_none()
 
-    async def fail(
-        self, task_id: str, error: str | None = None
-    ) -> TaskModel | None:
+    async def fail(self, task_id: str, error: str | None = None) -> TaskModel | None:
         """Mark a task as failed.
 
         Args:
@@ -232,9 +232,7 @@ class TaskRepository:
         )
         return result.scalar_one_or_none()
 
-    async def cancel(
-        self, task_id: str, reason: str | None = None
-    ) -> TaskModel | None:
+    async def cancel(self, task_id: str, reason: str | None = None) -> TaskModel | None:
         """Mark a task as cancelled.
 
         Args:

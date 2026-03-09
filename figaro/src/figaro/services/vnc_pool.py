@@ -197,18 +197,27 @@ class VncConnectionPool:
         # Create a fresh connection (with timeout to avoid blocking on unreachable hosts)
         logger.info(
             "VNC pool: connecting %s to %s:%d (timeout=%.0fs)",
-            "TLS" if use_tls else "TCP", host, port, self._connect_timeout,
+            "TLS" if use_tls else "TCP",
+            host,
+            port,
+            self._connect_timeout,
         )
         try:
             reader, writer = await asyncio.wait_for(
                 asyncio.open_connection(
-                    host, port,
+                    host,
+                    port,
                     ssl=_create_ssl_context() if use_tls else None,
                 ),
                 timeout=self._connect_timeout,
             )
         except asyncio.TimeoutError:
-            logger.error("VNC pool: TCP connect to %s:%d timed out after %.0fs", host, port, self._connect_timeout)
+            logger.error(
+                "VNC pool: TCP connect to %s:%d timed out after %.0fs",
+                host,
+                port,
+                self._connect_timeout,
+            )
             raise
         except OSError as exc:
             logger.error("VNC pool: TCP connect to %s:%d failed: %s", host, port, exc)
@@ -221,12 +230,19 @@ class VncConnectionPool:
         except (ValueError, asyncio.IncompleteReadError) as exc:
             writer.close()
             if use_tls:
-                logger.error("VNC pool: RFB handshake with %s:%d failed (TLS): %s", host, port, exc)
+                logger.error(
+                    "VNC pool: RFB handshake with %s:%d failed (TLS): %s",
+                    host,
+                    port,
+                    exc,
+                )
                 raise
             # Plain TCP rejected — retry with TLS (macOS Screen Sharing)
             logger.info(
                 "VNC pool: plain TCP handshake with %s:%d failed (%s), retrying with TLS",
-                host, port, exc,
+                host,
+                port,
+                exc,
             )
             try:
                 reader, writer = await asyncio.wait_for(
@@ -240,15 +256,27 @@ class VncConnectionPool:
                 self._tls_keys.add(key)
                 logger.info("VNC pool: TLS connection to %s:%d established", host, port)
             except Exception as tls_exc:
-                logger.error("VNC pool: TLS handshake with %s:%d also failed: %s", host, port, tls_exc)
+                logger.error(
+                    "VNC pool: TLS handshake with %s:%d also failed: %s",
+                    host,
+                    port,
+                    tls_exc,
+                )
                 writer.close()
                 raise
         except asyncio.TimeoutError:
-            logger.error("VNC pool: RFB handshake with %s:%d timed out after %.0fs", host, port, self._connect_timeout)
+            logger.error(
+                "VNC pool: RFB handshake with %s:%d timed out after %.0fs",
+                host,
+                port,
+                self._connect_timeout,
+            )
             writer.close()
             raise
         except Exception as exc:
-            logger.error("VNC pool: RFB handshake with %s:%d failed: %s", host, port, exc)
+            logger.error(
+                "VNC pool: RFB handshake with %s:%d failed: %s", host, port, exc
+            )
             writer.close()
             raise
         logger.info("VNC pool: TCP connection to %s established", key)
@@ -273,13 +301,22 @@ class VncConnectionPool:
             await entry.close()
             del self._entries[key]
 
-        logger.info("VNC pool: connecting WebSocket to %s (timeout=%.0fs)", url, self._connect_timeout)
+        logger.info(
+            "VNC pool: connecting WebSocket to %s (timeout=%.0fs)",
+            url,
+            self._connect_timeout,
+        )
         try:
             ws = await asyncio.wait_for(
-                websockets.connect(url, ping_interval=None), timeout=self._connect_timeout
+                websockets.connect(url, ping_interval=None),
+                timeout=self._connect_timeout,
             )
         except asyncio.TimeoutError:
-            logger.error("VNC pool: WebSocket connect to %s timed out after %.0fs", url, self._connect_timeout)
+            logger.error(
+                "VNC pool: WebSocket connect to %s timed out after %.0fs",
+                url,
+                self._connect_timeout,
+            )
             raise
         except Exception as exc:
             logger.error("VNC pool: WebSocket connect to %s failed: %s", url, exc)
@@ -294,11 +331,17 @@ class VncConnectionPool:
                 timeout=self._connect_timeout,
             )
         except asyncio.TimeoutError:
-            logger.error("VNC pool: RFB handshake over WebSocket %s timed out after %.0fs", url, self._connect_timeout)
+            logger.error(
+                "VNC pool: RFB handshake over WebSocket %s timed out after %.0fs",
+                url,
+                self._connect_timeout,
+            )
             await adapter.close()
             raise
         except Exception as exc:
-            logger.error("VNC pool: RFB handshake over WebSocket %s failed: %s", url, exc)
+            logger.error(
+                "VNC pool: RFB handshake over WebSocket %s failed: %s", url, exc
+            )
             await adapter.close()
             raise
         logger.info("VNC pool: WebSocket connection to %s established", key)

@@ -1,16 +1,19 @@
 """Pytest configuration and fixtures for figaro tests."""
 
-import pytest
+import json
+from pathlib import Path
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
-from sqlalchemy import event, JSON, MetaData, Table, Column
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+import pytest
+from sqlalchemy import Column, JSON, MetaData, String, Table, event
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PG_UUID
-from sqlalchemy import String
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from figaro.db.types import EncryptedString
-
 from figaro.services import Registry, TaskManager
+
+SNAPSHOTS_DIR = Path(__file__).parent / "snapshots"
 
 
 def _create_sqlite_compatible_metadata():
@@ -160,3 +163,57 @@ def mock_nats_service():
     service.conn = mock_conn
 
     return service
+
+
+def pytest_addoption(parser: pytest.Parser) -> None:
+    """Add custom CLI options for live tests."""
+    parser.addoption(
+        "--record",
+        action="store_true",
+        default=False,
+        help="Record span chain snapshots instead of comparing against them.",
+    )
+
+
+@pytest.fixture
+def record_mode(request: pytest.FixtureRequest) -> bool:
+    """Return True when --record flag is passed."""
+    return request.config.getoption("--record")
+
+
+def _load_snapshot(name: str) -> list[dict[str, Any]] | None:
+    """Load a span chain snapshot from disk, returning None if not found."""
+    path = SNAPSHOTS_DIR / f"{name}.json"
+    if not path.exists():
+        return None
+    return json.loads(path.read_text())
+
+
+def _save_snapshot(name: str, chain: list[dict[str, Any]]) -> None:
+    """Save a span chain snapshot to disk."""
+    SNAPSHOTS_DIR.mkdir(parents=True, exist_ok=True)
+    path = SNAPSHOTS_DIR / f"{name}.json"
+    path.write_text(json.dumps(chain, indent=2) + "\n")
+
+
+@pytest.fixture
+def span_chain_snapshot(request: pytest.FixtureRequest, record_mode: bool) -> Any:
+    """Fixture that loads or records span chain snapshots.
+
+    In normal mode, loads the snapshot for the current test and returns it.
+    In record mode, returns a callable that saves the snapshot.
+    """
+    test_name = request.node.name
+
+    class SnapshotHelper:
+        def load(self) -> list[dict[str, Any]] | None:
+            return _load_snapshot(test_name)
+
+        def save(self, chain: list[dict[str, Any]]) -> None:
+            _save_snapshot(test_name, chain)
+
+        @property
+        def is_recording(self) -> bool:
+            return record_mode
+
+    return SnapshotHelper()

@@ -55,13 +55,17 @@ class TestRunCommand:
         mock_writer.close = MagicMock()
 
         # First read returns output, second read returns empty (EOF)
-        mock_reader.read = AsyncMock(side_effect=[
-            "file1.txt\nfile2.txt\n",
-            "",
-        ])
+        mock_reader.read = AsyncMock(
+            side_effect=[
+                "file1.txt\nfile2.txt\n",
+                "",
+            ]
+        )
 
-        with patch("figaro.services.telnet_client.telnetlib3.open_connection",
-                   AsyncMock(return_value=(mock_reader, mock_writer))):
+        with patch(
+            "figaro.services.telnet_client.telnetlib3.open_connection",
+            AsyncMock(return_value=(mock_reader, mock_writer)),
+        ):
             result = await run_command("host", 23, None, None, "ls", timeout=5.0)
 
         assert "file1.txt" in result["output"]
@@ -75,16 +79,20 @@ class TestRunCommand:
         mock_writer.close = MagicMock()
 
         # Reads: login prompt, password prompt, post-login prompt, command output, EOF
-        mock_reader.read = AsyncMock(side_effect=[
-            "login: ",
-            "Password: ",
-            "Welcome\n$ ",
-            "file1.txt\n",
-            "",
-        ])
+        mock_reader.read = AsyncMock(
+            side_effect=[
+                "login: ",
+                "Password: ",
+                "Welcome\n$ ",
+                "file1.txt\n",
+                "",
+            ]
+        )
 
-        with patch("figaro.services.telnet_client.telnetlib3.open_connection",
-                   AsyncMock(return_value=(mock_reader, mock_writer))):
+        with patch(
+            "figaro.services.telnet_client.telnetlib3.open_connection",
+            AsyncMock(return_value=(mock_reader, mock_writer)),
+        ):
             await run_command("host", 23, "admin", "secret", "ls", timeout=5.0)
 
         # Verify login sequence: username, password, command
@@ -102,8 +110,10 @@ class TestRunCommand:
 
         mock_reader.read = AsyncMock(side_effect=["output\n", ""])
 
-        with patch("figaro.services.telnet_client.telnetlib3.open_connection",
-                   AsyncMock(return_value=(mock_reader, mock_writer))):
+        with patch(
+            "figaro.services.telnet_client.telnetlib3.open_connection",
+            AsyncMock(return_value=(mock_reader, mock_writer)),
+        ):
             await run_command("host", 23, None, None, "ls", timeout=5.0)
 
         mock_writer.close.assert_called_once()
@@ -118,7 +128,9 @@ class TestRunCommand:
         mock_reader.read = AsyncMock(side_effect=["output\n", ""])
 
         mock_open = AsyncMock(return_value=(mock_reader, mock_writer))
-        with patch("figaro.services.telnet_client.telnetlib3.open_connection", mock_open):
+        with patch(
+            "figaro.services.telnet_client.telnetlib3.open_connection", mock_open
+        ):
             await run_command("myhost", 2323, None, None, "echo hi", timeout=5.0)
 
         mock_open.assert_awaited_once_with("myhost", 2323)

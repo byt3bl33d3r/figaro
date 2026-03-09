@@ -7,14 +7,19 @@ from datetime import datetime, timezone
 from typing import Any, TYPE_CHECKING
 from urllib.parse import urlparse
 
-from figaro_nats import NatsConnection, Subjects, ensure_streams
+from opentelemetry import trace
+
+from figaro_nats import NatsConnection, Subjects, ensure_streams, traced
 
 from figaro.models import ClientType
 from figaro.models.messages import WorkerStatus
 from figaro.services.registry import Registry
 from figaro.services.task_manager import TaskManager, TaskStatus
 from figaro.services.ssh_client import parse_ssh_url, run_command as ssh_run_command
-from figaro.services.telnet_client import parse_telnet_url, run_command as telnet_run_command
+from figaro.services.telnet_client import (
+    parse_telnet_url,
+    run_command as telnet_run_command,
+)
 from figaro.services.vnc_client import (
     click_with_client,
     key_with_client,
@@ -115,7 +120,7 @@ class NatsService:
             parsed = json.loads(raw)
             if isinstance(parsed, list):
                 env_entries = parsed
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             pass
 
         if self._session_factory:
@@ -149,12 +154,17 @@ class NatsService:
                         self._desktop_worker_ids.add(w.worker_id)
                         logger.info(f"Registered desktop worker from DB: {w.worker_id}")
             except Exception:
-                logger.warning("Failed to load desktop workers from DB, falling back to env var", exc_info=True)
+                logger.warning(
+                    "Failed to load desktop workers from DB, falling back to env var",
+                    exc_info=True,
+                )
                 await self._register_desktop_workers_from_env(env_entries)
         else:
             await self._register_desktop_workers_from_env(env_entries)
 
-    async def _register_desktop_workers_from_env(self, entries: list[dict[str, Any]]) -> None:
+    async def _register_desktop_workers_from_env(
+        self, entries: list[dict[str, Any]]
+    ) -> None:
         """Fallback: register desktop workers from parsed env var entries."""
         for entry in entries:
             worker_id = entry.get("id", "")
@@ -183,7 +193,9 @@ class NatsService:
                     self._settings.vnc_password = password
                     logger.info("Loaded VNC password from settings table")
         except Exception:
-            logger.warning("Failed to load VNC password from settings table", exc_info=True)
+            logger.warning(
+                "Failed to load VNC password from settings table", exc_info=True
+            )
 
     # ── Subscription setup ──────────────────────────────────────
 
@@ -515,7 +527,9 @@ class NatsService:
         # Downgrade desktop-only workers instead of fully unregistering
         if client_id in self._desktop_worker_ids:
             await self._registry.downgrade_to_desktop_only(client_id)
-            logger.info(f"Downgraded worker {client_id} to desktop-only (agent disconnected)")
+            logger.info(
+                f"Downgraded worker {client_id} to desktop-only (agent disconnected)"
+            )
         else:
             await self._registry.unregister(client_id)
 
@@ -552,6 +566,7 @@ class NatsService:
             data,
         )
 
+    @traced("orchestrator.handle_task_complete")
     async def _handle_task_complete(self, data: dict[str, Any]) -> None:
         """Handle task completion from worker/supervisor."""
         task_id = data.get("task_id")
@@ -600,9 +615,7 @@ class NatsService:
 
         # Notify gateway if scheduled task has notify_on_complete
         if task_id:
-            asyncio.create_task(
-                self._maybe_notify_gateway(task_id, result=result)
-            )
+            asyncio.create_task(self._maybe_notify_gateway(task_id, result=result))
 
         # Check if completed task should trigger optimization
         if task_id:
@@ -611,6 +624,7 @@ class NatsService:
         # Process pending queue
         await self._process_pending_queue()
 
+    @traced("orchestrator.handle_task_error")
     async def _handle_task_error(self, data: dict[str, Any]) -> None:
         """Handle task error from worker/supervisor."""
         task_id = data.get("task_id")
@@ -640,9 +654,7 @@ class NatsService:
 
         # Notify gateway if scheduled task has notify_on_complete
         if task_id:
-            asyncio.create_task(
-                self._maybe_notify_gateway(task_id, error=error)
-            )
+            asyncio.create_task(self._maybe_notify_gateway(task_id, error=error))
 
         # Check if failed task should trigger self-healing
         if task_id:
@@ -734,6 +746,7 @@ class NatsService:
 
     # ── Publish methods ─────────────────────────────────────────
 
+    @traced("orchestrator.publish_task_assignment")
     async def publish_task_assignment(
         self,
         worker_id: str,
@@ -827,9 +840,7 @@ class NatsService:
             if not supervisor:
                 return False
             if await self.publish_supervisor_task(supervisor.client_id, task):
-                await self._task_manager.assign_task(
-                    task.task_id, supervisor.client_id
-                )
+                await self._task_manager.assign_task(task.task_id, supervisor.client_id)
                 await self.broadcast_supervisors()
                 return True
             # Dead supervisor was unregistered, try next one
@@ -953,12 +964,15 @@ class NatsService:
                     channel,
                     {"chat_id": "", "text": text},
                 )
-            logger.info(f"Sent gateway notification for scheduled task {scheduled_task_id}")
+            logger.info(
+                f"Sent gateway notification for scheduled task {scheduled_task_id}"
+            )
         except Exception:
             logger.exception(f"Failed to send gateway notification for task {task_id}")
 
     # ── Pending queue processing ────────────────────────────────
 
+    @traced("orchestrator.process_pending_queue")
     async def _process_pending_queue(self) -> None:
         """Check for pending tasks and assign to idle workers/supervisors."""
         while await self._task_manager.has_pending_tasks():
@@ -982,9 +996,7 @@ class NatsService:
                 else:
                     worker = await self._registry.claim_idle_worker()
                     if worker:
-                        await self._task_manager.assign_task(
-                            task_id, worker.client_id
-                        )
+                        await self._task_manager.assign_task(task_id, worker.client_id)
                         await self.publish_task_assignment(worker.client_id, task)
                         await self.broadcast_workers()
                         logger.info(
@@ -1123,7 +1135,9 @@ class NatsService:
         status = data.get("status")
         worker_id = data.get("worker_id")
         limit = data.get("limit", 50)
-        tasks = await self._task_manager.get_all_tasks(status=status, limit=limit, worker_id=worker_id)
+        tasks = await self._task_manager.get_all_tasks(
+            status=status, limit=limit, worker_id=worker_id
+        )
         return {
             "tasks": [
                 {
@@ -1136,7 +1150,9 @@ class NatsService:
                     "session_id": t.session_id,
                     "messages": t.messages,
                     "created_at": t.created_at.isoformat() if t.created_at else None,
-                    "completed_at": t.completed_at.isoformat() if t.completed_at else None,
+                    "completed_at": t.completed_at.isoformat()
+                    if t.completed_at
+                    else None,
                 }
                 for t in tasks
             ]
@@ -1167,7 +1183,11 @@ class NatsService:
         offset = data.get("offset", 0)
         include_messages = data.get("include_messages", False)
         tasks = await self._task_manager.search_tasks(
-            query=query, status=status, limit=limit, offset=offset, include_messages=include_messages,
+            query=query,
+            status=status,
+            limit=limit,
+            offset=offset,
+            include_messages=include_messages,
         )
         task_dicts = []
         for t in tasks:
@@ -1202,9 +1222,7 @@ class NatsService:
     async def _api_list_scheduled_tasks(self, data: dict[str, Any]) -> dict[str, Any]:
         """List all scheduled tasks."""
         tasks = await self._scheduler.get_all_scheduled_tasks()
-        return {
-            "tasks": [self._format_scheduled_task(t) for t in tasks]
-        }
+        return {"tasks": [self._format_scheduled_task(t) for t in tasks]}
 
     async def _api_get_scheduled_task(self, data: dict[str, Any]) -> dict[str, Any]:
         """Get a scheduled task by ID."""
@@ -1235,9 +1253,7 @@ class NatsService:
             run_at=run_at,
         )
         formatted = self._format_scheduled_task(task)
-        await self.conn.publish(
-            "figaro.broadcast.scheduled_task_created", formatted
-        )
+        await self.conn.publish("figaro.broadcast.scheduled_task_created", formatted)
         return formatted
 
     async def _api_update_scheduled_task(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -1272,9 +1288,7 @@ class NatsService:
         if task is None:
             return {"error": f"Scheduled task {schedule_id} not found"}
         formatted = self._format_scheduled_task(task)
-        await self.conn.publish(
-            "figaro.broadcast.scheduled_task_updated", formatted
-        )
+        await self.conn.publish("figaro.broadcast.scheduled_task_updated", formatted)
         return formatted
 
     async def _api_delete_scheduled_task(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -1295,9 +1309,7 @@ class NatsService:
         if task is None:
             return {"error": f"Scheduled task {schedule_id} not found"}
         formatted = self._format_scheduled_task(task)
-        await self.conn.publish(
-            "figaro.broadcast.scheduled_task_updated", formatted
-        )
+        await self.conn.publish("figaro.broadcast.scheduled_task_updated", formatted)
         return formatted
 
     async def _api_trigger_scheduled_task(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -1308,14 +1320,19 @@ class NatsService:
             return {"error": f"Scheduled task {schedule_id} not found"}
         return {"schedule_id": task.schedule_id, "triggered": True}
 
+    @traced("orchestrator.api_create_task")
     async def _api_create_task(self, data: dict[str, Any]) -> dict[str, Any]:
         """Create a new task and assign based on target option."""
         prompt = data.get("prompt", "")
         options = data.get("options")
 
+        # Allow caller to specify task_id (e.g. for tracing correlation)
+        task_id = options.get("task_id") if isinstance(options, dict) else None
+
         task = await self._task_manager.create_task(
             prompt=prompt,
             options=options,
+            task_id=task_id,
         )
 
         # Determine routing target from options
@@ -1345,18 +1362,14 @@ class NatsService:
                     await self._registry.set_worker_status(
                         target_worker_id, WorkerStatus.BUSY
                     )
-                    await self._task_manager.assign_task(
-                        task.task_id, target_worker_id
-                    )
+                    await self._task_manager.assign_task(task.task_id, target_worker_id)
                     await self.publish_task_assignment(target_worker_id, task)
                     await self.broadcast_workers()
                     assigned = True
             else:
                 worker = await self._registry.claim_idle_worker()
                 if worker:
-                    await self._task_manager.assign_task(
-                        task.task_id, worker.client_id
-                    )
+                    await self._task_manager.assign_task(task.task_id, worker.client_id)
                     await self.publish_task_assignment(worker.client_id, task)
                     await self.broadcast_workers()
                     assigned = True
@@ -1365,9 +1378,7 @@ class NatsService:
             if not assigned:
                 worker = await self._registry.claim_idle_worker()
                 if worker:
-                    await self._task_manager.assign_task(
-                        task.task_id, worker.client_id
-                    )
+                    await self._task_manager.assign_task(task.task_id, worker.client_id)
                     await self.publish_task_assignment(worker.client_id, task)
                     await self.broadcast_workers()
                     assigned = True
@@ -1380,6 +1391,12 @@ class NatsService:
         task = await self._task_manager.get_task(task.task_id)
         if task is None:
             return {"error": "Failed to create task"}
+
+        # Include the current trace ID so callers can query Jaeger
+        span = trace.get_current_span()
+        ctx = span.get_span_context()
+        trace_id = format(ctx.trace_id, "032x") if ctx.trace_id else ""
+
         return {
             "task_id": task.task_id,
             "prompt": task.prompt,
@@ -1389,6 +1406,7 @@ class NatsService:
             "worker_id": task.worker_id,
             "session_id": task.session_id,
             "messages": task.messages,
+            "trace_id": trace_id,
         }
 
     async def _api_stop_task(self, data: dict[str, Any]) -> dict[str, Any]:
@@ -1547,22 +1565,38 @@ class NatsService:
 
             if parsed.scheme == "wss":
                 # WebSocket mode — tunnel through websockify (raw VNC port not accessible)
-                logger.debug("VNC %s: using WebSocket connection to %s", action, novnc_url)
+                logger.debug(
+                    "VNC %s: using WebSocket connection to %s", action, novnc_url
+                )
                 ctx = self._vnc_pool.ws_connection(
-                    novnc_url, username=username, password=password,
+                    novnc_url,
+                    username=username,
+                    password=password,
                 )
             elif parsed.scheme == "vnc":
                 # Raw TCP mode — URL points directly at VNC server
-                logger.debug("VNC %s: using TCP connection to %s:%d", action, url_host, url_port)
+                logger.debug(
+                    "VNC %s: using TCP connection to %s:%d", action, url_host, url_port
+                )
                 ctx = self._vnc_pool.connection(
-                    url_host, url_port, username=username, password=password,
+                    url_host,
+                    url_port,
+                    username=username,
+                    password=password,
                 )
             else:
                 # ws:// or other — host is reachable, use raw VNC port
-                logger.debug("VNC %s: using TCP connection to %s:%d", action, url_host, self._settings.vnc_port)
+                logger.debug(
+                    "VNC %s: using TCP connection to %s:%d",
+                    action,
+                    url_host,
+                    self._settings.vnc_port,
+                )
                 ctx = self._vnc_pool.connection(
-                    url_host, self._settings.vnc_port,
-                    username=username, password=password,
+                    url_host,
+                    self._settings.vnc_port,
+                    username=username,
+                    password=password,
                 )
 
             async with ctx as client:
@@ -1570,14 +1604,26 @@ class NatsService:
                     quality = data.get("quality", 70)
                     max_width = data.get("max_width")
                     max_height = data.get("max_height")
-                    image, mime_type, orig_w, orig_h, disp_w, disp_h = (
-                        await screenshot_with_client(
-                            client, quality, max_width, max_height,
-                        )
+                    (
+                        image,
+                        mime_type,
+                        orig_w,
+                        orig_h,
+                        disp_w,
+                        disp_h,
+                    ) = await screenshot_with_client(
+                        client,
+                        quality,
+                        max_width,
+                        max_height,
                     )
                     logger.info(
                         "VNC screenshot for worker %s: %dx%d -> %dx%d",
-                        worker_id, orig_w, orig_h, disp_w, disp_h,
+                        worker_id,
+                        orig_w,
+                        orig_h,
+                        disp_w,
+                        disp_h,
                     )
                     return {
                         "image": image,
@@ -1592,18 +1638,26 @@ class NatsService:
                     return {"ok": True}
                 elif action == "key":
                     await key_with_client(
-                        client, data["key"], data.get("modifiers"),
+                        client,
+                        data["key"],
+                        data.get("modifiers"),
                         hold_seconds=data.get("hold_seconds"),
                     )
                     return {"ok": True}
                 elif action == "click":
                     await click_with_client(
-                        client, data["x"], data["y"], data.get("button", "left"),
+                        client,
+                        data["x"],
+                        data["y"],
+                        data.get("button", "left"),
                     )
                     return {"ok": True}
                 elif action == "unlock":
                     if not password:
-                        logger.warning("VNC unlock: no password configured for worker %s", worker_id)
+                        logger.warning(
+                            "VNC unlock: no password configured for worker %s",
+                            worker_id,
+                        )
                         return {"error": "No VNC password configured for this worker"}
                     await unlock_with_client(
                         client,
@@ -1613,7 +1667,9 @@ class NatsService:
                     )
                     return {"ok": True}
                 else:
-                    logger.warning("VNC unknown action '%s' for worker %s", action, worker_id)
+                    logger.warning(
+                        "VNC unknown action '%s' for worker %s", action, worker_id
+                    )
                     return {"error": f"Unknown action: {action}"}
         except asyncio.TimeoutError:
             logger.error(
@@ -1648,10 +1704,16 @@ class NatsService:
                 result = await ssh_run_command(
                     url_host, url_port, username, password, command, timeout=timeout
                 )
-                logger.info("SSH run_command for worker %s: exit_code=%s", worker_id, result.get("exit_code"))
+                logger.info(
+                    "SSH run_command for worker %s: exit_code=%s",
+                    worker_id,
+                    result.get("exit_code"),
+                )
                 return result
             else:
-                logger.warning("SSH unknown action '%s' for worker %s", action, worker_id)
+                logger.warning(
+                    "SSH unknown action '%s' for worker %s", action, worker_id
+                )
                 return {"error": f"Unknown action: {action}"}
         except asyncio.TimeoutError:
             logger.error("SSH %s timed out for worker %s", action, worker_id)
@@ -1669,7 +1731,9 @@ class NatsService:
 
         conn = await self._registry.get_connection(worker_id)
         if conn is None:
-            logger.warning("Telnet %s: worker %s not found in registry", action, worker_id)
+            logger.warning(
+                "Telnet %s: worker %s not found in registry", action, worker_id
+            )
             return {"error": "Worker not found"}
 
         novnc_url = conn.novnc_url or ""
@@ -1687,7 +1751,9 @@ class NatsService:
                 logger.info("Telnet run_command for worker %s completed", worker_id)
                 return result
             else:
-                logger.warning("Telnet unknown action '%s' for worker %s", action, worker_id)
+                logger.warning(
+                    "Telnet unknown action '%s' for worker %s", action, worker_id
+                )
                 return {"error": f"Unknown action: {action}"}
         except asyncio.TimeoutError:
             logger.error("Telnet %s timed out for worker %s", action, worker_id)
@@ -1734,15 +1800,15 @@ class NatsService:
                     )
                     await session.commit()
             except Exception:
-                logger.warning(f"Failed to persist desktop worker {worker_id} to DB", exc_info=True)
+                logger.warning(
+                    f"Failed to persist desktop worker {worker_id} to DB", exc_info=True
+                )
 
         await self.broadcast_workers()
         logger.info(f"Registered desktop-only worker via API: {worker_id}")
         return {"status": "ok"}
 
-    async def _api_remove_desktop_worker(
-        self, data: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _api_remove_desktop_worker(self, data: dict[str, Any]) -> dict[str, Any]:
         """Remove a desktop-only worker via NATS API."""
         worker_id = data.get("worker_id", "")
 
@@ -1767,15 +1833,16 @@ class NatsService:
                     await repo.delete(worker_id)
                     await session.commit()
             except Exception:
-                logger.warning(f"Failed to remove desktop worker {worker_id} from DB", exc_info=True)
+                logger.warning(
+                    f"Failed to remove desktop worker {worker_id} from DB",
+                    exc_info=True,
+                )
 
         await self.broadcast_workers()
         logger.info(f"Removed desktop-only worker via API: {worker_id}")
         return {"status": "ok"}
 
-    async def _api_update_desktop_worker(
-        self, data: dict[str, Any]
-    ) -> dict[str, Any]:
+    async def _api_update_desktop_worker(self, data: dict[str, Any]) -> dict[str, Any]:
         """Update a desktop-only worker via NATS API."""
         worker_id = data.get("worker_id", "")
         new_worker_id = data.get("new_worker_id") or None
@@ -1823,7 +1890,10 @@ class NatsService:
                     )
                     await session.commit()
             except Exception:
-                logger.warning(f"Failed to persist desktop worker update for {worker_id} to DB", exc_info=True)
+                logger.warning(
+                    f"Failed to persist desktop worker update for {worker_id} to DB",
+                    exc_info=True,
+                )
 
         await self.broadcast_workers()
         logger.info(f"Updated desktop-only worker via API: {worker_id}")
@@ -1883,7 +1953,8 @@ class NatsService:
             # Check if self-learning run count has reached the limit
             if (
                 scheduled_task.self_learning_max_runs is not None
-                and scheduled_task.self_learning_run_count >= scheduled_task.self_learning_max_runs
+                and scheduled_task.self_learning_run_count
+                >= scheduled_task.self_learning_max_runs
             ):
                 logger.info(
                     f"Skipping optimization for scheduled task {scheduled_task_id}: "

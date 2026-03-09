@@ -189,11 +189,7 @@ class ScheduledTaskRepository:
             if task.interval_seconds == 0 and task.last_run_at is not None:
                 new_enabled = False
                 next_run = None
-            elif (
-                task.run_at
-                and task.run_at > now
-                and task.last_run_at is None
-            ):
+            elif task.run_at and task.run_at > now and task.last_run_at is None:
                 # Use run_at as next_run_at if it's in the future and task hasn't run yet
                 next_run = task.run_at
             else:
@@ -232,9 +228,8 @@ class ScheduledTaskRepository:
 
         # Check if we should auto-disable
         should_disable = (
-            (task.max_runs is not None and new_run_count >= task.max_runs)
-            or task.interval_seconds == 0
-        )
+            task.max_runs is not None and new_run_count >= task.max_runs
+        ) or task.interval_seconds == 0
 
         result = await self.session.execute(
             update(ScheduledTaskModel)

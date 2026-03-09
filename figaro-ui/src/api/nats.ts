@@ -1,10 +1,13 @@
-import { connect, JSONCodec } from "nats.ws";
+import { connect, JSONCodec, headers as createHeaders } from "nats.ws";
 import type {
   NatsConnection,
   Subscription,
   JetStreamClient,
   Msg,
 } from "nats.ws";
+import { context, trace as traceApi, propagation } from "@opentelemetry/api";
+import type { Span } from "@opentelemetry/api";
+import { createTaskSpan, injectTraceContext } from "../tracing";
 import type {
   Worker,
   WorkersPayload,
@@ -589,6 +592,7 @@ class NatsManager {
 
       // These are handled via JetStream (handleTaskEvent), skip broadcast duplicates
       case "task_assigned":
+      case "task_message":
       case "task_error":
       case "task_submitted_to_supervisor":
         break;
@@ -760,11 +764,69 @@ class NatsManager {
     if (!this.nc || this.nc.isClosed()) {
       throw new Error("Not connected to NATS");
     }
-    const payload = data ? jc.encode(data) : undefined;
-    const response = await this.nc.request(subject, payload, {
-      timeout: 30000,
-    });
-    return jc.decode(response.data) as T;
+
+    const isTaskCreate = subject === "figaro.api.tasks.create";
+    let span: Span | undefined;
+
+    if (isTaskCreate && data && typeof data === "object" && "prompt" in data) {
+      span = createTaskSpan((data as { prompt: string }).prompt);
+    }
+
+    try {
+      const payload = data ? jc.encode(data) : undefined;
+
+      const traceHeaders = span
+        ? this.injectTraceHeaders(span)
+        : this.buildTraceHeaders();
+
+      const response = await this.nc.request(subject, payload, {
+        timeout: 30000,
+        headers: traceHeaders,
+      });
+
+      span?.setStatus({ code: 1 }); // SpanStatusCode.OK
+      return jc.decode(response.data) as T;
+    } catch (error) {
+      if (span) {
+        span.setStatus({
+          code: 2, // SpanStatusCode.ERROR
+          message: error instanceof Error ? error.message : String(error),
+        });
+        span.recordException(
+          error instanceof Error ? error : new Error(String(error))
+        );
+      }
+      throw error;
+    } finally {
+      span?.end();
+    }
+  }
+
+  private injectTraceHeaders(span: Span) {
+    const spanContext = traceApi.setSpan(context.active(), span);
+    const carrier: Record<string, string> = {};
+    propagation.inject(spanContext, carrier);
+    return this.carrierToHeaders(carrier);
+  }
+
+  private buildTraceHeaders() {
+    const carrier = injectTraceContext();
+    if (Object.keys(carrier).length === 0) {
+      return undefined;
+    }
+    return this.carrierToHeaders(carrier);
+  }
+
+  private carrierToHeaders(carrier: Record<string, string>) {
+    const keys = Object.keys(carrier);
+    if (keys.length === 0) {
+      return undefined;
+    }
+    const hdrs = createHeaders();
+    for (const key of keys) {
+      hdrs.set(key, carrier[key]);
+    }
+    return hdrs;
   }
 
   get isConnected(): boolean {

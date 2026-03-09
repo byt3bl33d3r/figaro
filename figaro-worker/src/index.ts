@@ -1,4 +1,5 @@
 import { loadConfig } from "./config";
+import { initTracing } from "./tracing/tracer";
 import { NatsClient } from "./nats/client";
 import { TaskExecutor } from "./worker/executor";
 import { SupervisorExecutor } from "./supervisor/executor";
@@ -6,6 +7,8 @@ import type { TaskPayload } from "./types";
 
 const config = loadConfig();
 const label = config.mode === "supervisor" ? "supervisor" : "worker";
+
+initTracing(config.mode === "supervisor" ? "figaro-supervisor" : "figaro-worker");
 
 console.log(`[${label}] Starting ${label} ${config.workerId}`);
 console.log(`[${label}] Connecting to NATS at ${config.natsUrl}`);

@@ -42,9 +42,7 @@ class TelegramChannel:
     async def send_message(self, chat_id: str, text: str, **kwargs: Any) -> None:
         """Send message via Telegram."""
         int_chat_id = (
-            int(chat_id)
-            if chat_id
-            else (list(self._bot._allowed_chat_ids)[0] if self._bot._allowed_chat_ids else 0)
+            int(chat_id) if chat_id else (list(self._bot._allowed_chat_ids)[0] if self._bot._allowed_chat_ids else 0)
         )
         await self._bot.send_message(int_chat_id, text)
 
@@ -62,9 +60,7 @@ class TelegramChannel:
     ) -> str | None:
         """Ask a question via Telegram and wait for response."""
         int_chat_id = (
-            int(chat_id)
-            if chat_id
-            else (list(self._bot._allowed_chat_ids)[0] if self._bot._allowed_chat_ids else 0)
+            int(chat_id) if chat_id else (list(self._bot._allowed_chat_ids)[0] if self._bot._allowed_chat_ids else 0)
         )
         return await self._bot.ask_question(
             question_id=question_id,

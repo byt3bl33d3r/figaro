@@ -48,8 +48,16 @@ class TestAcquireCreatesConnection:
         client = _make_client()
 
         with (
-            patch("figaro.services.vnc_pool.asyncio.open_connection", new_callable=AsyncMock, return_value=(MagicMock(), writer)) as mock_open,
-            patch("figaro.services.vnc_pool.asyncvnc.Client.create", new_callable=AsyncMock, return_value=client),
+            patch(
+                "figaro.services.vnc_pool.asyncio.open_connection",
+                new_callable=AsyncMock,
+                return_value=(MagicMock(), writer),
+            ) as mock_open,
+            patch(
+                "figaro.services.vnc_pool.asyncvnc.Client.create",
+                new_callable=AsyncMock,
+                return_value=client,
+            ),
         ):
             async with pool.connection("host", 5901, password="pw") as c:
                 assert c is client
@@ -68,8 +76,16 @@ class TestReuseConnection:
         client = _make_client()
 
         with (
-            patch("figaro.services.vnc_pool.asyncio.open_connection", new_callable=AsyncMock, return_value=(MagicMock(), writer)) as mock_open,
-            patch("figaro.services.vnc_pool.asyncvnc.Client.create", new_callable=AsyncMock, return_value=client),
+            patch(
+                "figaro.services.vnc_pool.asyncio.open_connection",
+                new_callable=AsyncMock,
+                return_value=(MagicMock(), writer),
+            ) as mock_open,
+            patch(
+                "figaro.services.vnc_pool.asyncvnc.Client.create",
+                new_callable=AsyncMock,
+                return_value=client,
+            ),
         ):
             # First acquire
             async with pool.connection("host", 5901) as c1:
@@ -111,8 +127,14 @@ class TestStaleConnectionReconnects:
             return client2
 
         with (
-            patch("figaro.services.vnc_pool.asyncio.open_connection", side_effect=fake_open),
-            patch("figaro.services.vnc_pool.asyncvnc.Client.create", side_effect=fake_create),
+            patch(
+                "figaro.services.vnc_pool.asyncio.open_connection",
+                side_effect=fake_open,
+            ),
+            patch(
+                "figaro.services.vnc_pool.asyncvnc.Client.create",
+                side_effect=fake_create,
+            ),
         ):
             # First acquire
             async with pool.connection("host", 5901) as c:
@@ -139,8 +161,16 @@ class TestEvictOnError:
         client = _make_client()
 
         with (
-            patch("figaro.services.vnc_pool.asyncio.open_connection", new_callable=AsyncMock, return_value=(MagicMock(), writer)),
-            patch("figaro.services.vnc_pool.asyncvnc.Client.create", new_callable=AsyncMock, return_value=client),
+            patch(
+                "figaro.services.vnc_pool.asyncio.open_connection",
+                new_callable=AsyncMock,
+                return_value=(MagicMock(), writer),
+            ),
+            patch(
+                "figaro.services.vnc_pool.asyncvnc.Client.create",
+                new_callable=AsyncMock,
+                return_value=client,
+            ),
         ):
             with pytest.raises(ConnectionError):
                 async with pool.connection("host", 5901):
@@ -161,8 +191,16 @@ class TestIdleSweep:
         client = _make_client()
 
         with (
-            patch("figaro.services.vnc_pool.asyncio.open_connection", new_callable=AsyncMock, return_value=(MagicMock(), writer)),
-            patch("figaro.services.vnc_pool.asyncvnc.Client.create", new_callable=AsyncMock, return_value=client),
+            patch(
+                "figaro.services.vnc_pool.asyncio.open_connection",
+                new_callable=AsyncMock,
+                return_value=(MagicMock(), writer),
+            ),
+            patch(
+                "figaro.services.vnc_pool.asyncvnc.Client.create",
+                new_callable=AsyncMock,
+                return_value=client,
+            ),
         ):
             async with pool.connection("host", 5901):
                 pass
@@ -188,8 +226,16 @@ class TestCloseAll:
         client = _make_client()
 
         with (
-            patch("figaro.services.vnc_pool.asyncio.open_connection", new_callable=AsyncMock, return_value=(MagicMock(), writer)),
-            patch("figaro.services.vnc_pool.asyncvnc.Client.create", new_callable=AsyncMock, return_value=client),
+            patch(
+                "figaro.services.vnc_pool.asyncio.open_connection",
+                new_callable=AsyncMock,
+                return_value=(MagicMock(), writer),
+            ),
+            patch(
+                "figaro.services.vnc_pool.asyncvnc.Client.create",
+                new_callable=AsyncMock,
+                return_value=client,
+            ),
         ):
             async with pool.connection("host", 5901):
                 pass
@@ -222,8 +268,14 @@ class TestConcurrentDifferentHosts:
             return client_b
 
         with (
-            patch("figaro.services.vnc_pool.asyncio.open_connection", side_effect=fake_open),
-            patch("figaro.services.vnc_pool.asyncvnc.Client.create", side_effect=fake_create),
+            patch(
+                "figaro.services.vnc_pool.asyncio.open_connection",
+                side_effect=fake_open,
+            ),
+            patch(
+                "figaro.services.vnc_pool.asyncvnc.Client.create",
+                side_effect=fake_create,
+            ),
         ):
             results = {}
 
@@ -254,14 +306,26 @@ class TestWsConnectionCreates:
         client = _make_client()
 
         with (
-            patch("figaro.services.vnc_pool.websockets.connect", new_callable=AsyncMock, return_value=mock_ws) as mock_connect,
-            patch("figaro.services.vnc_pool.WsVncAdapter", return_value=adapter) as mock_adapter_cls,
-            patch("figaro.services.vnc_pool.asyncvnc.Client.create", new_callable=AsyncMock, return_value=client) as mock_create,
+            patch(
+                "figaro.services.vnc_pool.websockets.connect",
+                new_callable=AsyncMock,
+                return_value=mock_ws,
+            ) as mock_connect,
+            patch(
+                "figaro.services.vnc_pool.WsVncAdapter", return_value=adapter
+            ) as mock_adapter_cls,
+            patch(
+                "figaro.services.vnc_pool.asyncvnc.Client.create",
+                new_callable=AsyncMock,
+                return_value=client,
+            ) as mock_create,
         ):
             async with pool.ws_connection("wss://host:443/vnc", password="pw") as c:
                 assert c is client
 
-            mock_connect.assert_awaited_once_with("wss://host:443/vnc", ping_interval=None)
+            mock_connect.assert_awaited_once_with(
+                "wss://host:443/vnc", ping_interval=None
+            )
             mock_adapter_cls.assert_called_once_with(mock_ws)
             adapter.start.assert_awaited_once()
             mock_create.assert_awaited_once_with(
@@ -281,9 +345,17 @@ class TestWsConnectionReuses:
         client = _make_client()
 
         with (
-            patch("figaro.services.vnc_pool.websockets.connect", new_callable=AsyncMock, return_value=mock_ws) as mock_connect,
+            patch(
+                "figaro.services.vnc_pool.websockets.connect",
+                new_callable=AsyncMock,
+                return_value=mock_ws,
+            ) as mock_connect,
             patch("figaro.services.vnc_pool.WsVncAdapter", return_value=adapter),
-            patch("figaro.services.vnc_pool.asyncvnc.Client.create", new_callable=AsyncMock, return_value=client),
+            patch(
+                "figaro.services.vnc_pool.asyncvnc.Client.create",
+                new_callable=AsyncMock,
+                return_value=client,
+            ),
         ):
             # First acquire
             async with pool.ws_connection("wss://host:443/vnc") as c1:
@@ -311,9 +383,17 @@ class TestWsEvictOnError:
         url = "wss://host:443/vnc"
 
         with (
-            patch("figaro.services.vnc_pool.websockets.connect", new_callable=AsyncMock, return_value=mock_ws),
+            patch(
+                "figaro.services.vnc_pool.websockets.connect",
+                new_callable=AsyncMock,
+                return_value=mock_ws,
+            ),
             patch("figaro.services.vnc_pool.WsVncAdapter", return_value=adapter),
-            patch("figaro.services.vnc_pool.asyncvnc.Client.create", new_callable=AsyncMock, return_value=client),
+            patch(
+                "figaro.services.vnc_pool.asyncvnc.Client.create",
+                new_callable=AsyncMock,
+                return_value=client,
+            ),
         ):
             with pytest.raises(ConnectionError):
                 async with pool.ws_connection(url):
@@ -336,9 +416,17 @@ class TestWsCloseCleanup:
         client = _make_client()
 
         with (
-            patch("figaro.services.vnc_pool.websockets.connect", new_callable=AsyncMock, return_value=mock_ws),
+            patch(
+                "figaro.services.vnc_pool.websockets.connect",
+                new_callable=AsyncMock,
+                return_value=mock_ws,
+            ),
             patch("figaro.services.vnc_pool.WsVncAdapter", return_value=adapter),
-            patch("figaro.services.vnc_pool.asyncvnc.Client.create", new_callable=AsyncMock, return_value=client),
+            patch(
+                "figaro.services.vnc_pool.asyncvnc.Client.create",
+                new_callable=AsyncMock,
+                return_value=client,
+            ),
         ):
             async with pool.ws_connection("wss://host:443/vnc"):
                 pass

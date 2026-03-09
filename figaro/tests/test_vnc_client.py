@@ -159,8 +159,11 @@ class TestVncScreenshot:
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
             b64, mime, orig_w, orig_h, disp_w, disp_h = await vnc_screenshot(
-                "host", port=5900, password="pw",
-                max_width=1280, max_height=800,
+                "host",
+                port=5900,
+                password="pw",
+                max_width=1280,
+                max_height=800,
             )
 
         assert mime == "image/jpeg"
@@ -185,7 +188,9 @@ class TestVncType:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_type("host", port=5900, password="pw", text="hello world")
 
         client.keyboard.write.assert_called_once_with("hello world")
@@ -195,7 +200,9 @@ class TestVncType:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_type("host", port=5900, password="pw", text="")
 
         client.keyboard.write.assert_called_once_with("")
@@ -206,7 +213,9 @@ class TestVncType:
         text = "user@example.com\tpassword123\n"
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_type("host", port=5900, password="pw", text=text)
 
         client.keyboard.write.assert_called_once_with(text)
@@ -225,7 +234,9 @@ class TestVncKey:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_key("host", port=5900, password="pw", key="Return")
 
         client.keyboard.press.assert_called_once_with("Return")
@@ -235,7 +246,9 @@ class TestVncKey:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_key(
                     "host",
                     port=5900,
@@ -251,7 +264,9 @@ class TestVncKey:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_key(
                     "host",
                     port=5900,
@@ -268,7 +283,9 @@ class TestVncKey:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_key(
                     "host", port=5900, password="pw", key="Escape", modifiers=None
                 )
@@ -281,7 +298,9 @@ class TestVncKey:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_key(
                     "host",
                     port=5900,
@@ -308,10 +327,15 @@ class TestVncKey:
         client.keyboard.hold = fake_hold
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock) as mock_sleep:
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ) as mock_sleep:
                 await vnc_key(
-                    "host", port=5900, password="pw",
-                    key="a", hold_seconds=2.5,
+                    "host",
+                    port=5900,
+                    password="pw",
+                    key="a",
+                    hold_seconds=2.5,
                 )
 
         assert held_keys == [("a",)]
@@ -335,10 +359,16 @@ class TestVncKey:
         client.keyboard.hold = fake_hold
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_key(
-                    "host", port=5900, password="pw",
-                    key="c", modifiers=["ctrl"], hold_seconds=1.0,
+                    "host",
+                    port=5900,
+                    password="pw",
+                    key="c",
+                    modifiers=["ctrl"],
+                    hold_seconds=1.0,
                 )
 
         assert held_keys == [("Ctrl", "c")]
@@ -349,10 +379,15 @@ class TestVncKey:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_key(
-                    "host", port=5900, password="pw",
-                    key="Return", hold_seconds=0,
+                    "host",
+                    port=5900,
+                    password="pw",
+                    key="Return",
+                    hold_seconds=0,
                 )
 
         client.keyboard.press.assert_called_once_with("Return")
@@ -363,7 +398,9 @@ class TestVncKey:
         client.keyboard.press.side_effect = KeyError("BadKey")
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 with pytest.raises(ValueError, match="Unrecognized key.*BadKey"):
                     await vnc_key("host", port=5900, password="pw", key="BadKey")
 
@@ -412,7 +449,9 @@ class TestVncClick:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_click("host", port=5900, password="pw", x=100, y=200)
 
         client.mouse.move.assert_called_once_with(100, 200)
@@ -425,7 +464,9 @@ class TestVncClick:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_click(
                     "host", port=5900, password="pw", x=50, y=75, button="right"
                 )
@@ -440,7 +481,9 @@ class TestVncClick:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_click(
                     "host", port=5900, password="pw", x=300, y=400, button="middle"
                 )
@@ -455,7 +498,9 @@ class TestVncClick:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_click(
                     "host", port=5900, password="pw", x=0, y=0, button="left"
                 )
@@ -469,7 +514,9 @@ class TestVncClick:
         cm, client = mock_vnc_client
 
         with patch("figaro.services.vnc_client.asyncvnc.connect", return_value=cm):
-            with patch("figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock):
+            with patch(
+                "figaro.services.vnc_client.asyncio.sleep", new_callable=AsyncMock
+            ):
                 await vnc_click("host", port=5900, password="pw", x=1920, y=1080)
 
         client.mouse.move.assert_called_once_with(1920, 1080)
@@ -606,9 +653,9 @@ class TestWsVncAdapter:
         ws.close = AsyncMock()
         ws.send = AsyncMock()
         # Default: no messages (empty iteration)
-        ws.__aiter__ = MagicMock(return_value=AsyncMock(
-            __anext__=AsyncMock(side_effect=StopAsyncIteration)
-        ))
+        ws.__aiter__ = MagicMock(
+            return_value=AsyncMock(__anext__=AsyncMock(side_effect=StopAsyncIteration))
+        )
         return ws
 
     async def test_start_creates_recv_task(self, mock_ws):
@@ -697,9 +744,9 @@ class TestWsVncAdapter:
         ws = AsyncMock()
         ws.close = AsyncMock()
         ws.send = AsyncMock()
-        ws.__aiter__ = MagicMock(return_value=AsyncMock(
-            __anext__=AsyncMock(side_effect=StopAsyncIteration)
-        ))
+        ws.__aiter__ = MagicMock(
+            return_value=AsyncMock(__anext__=AsyncMock(side_effect=StopAsyncIteration))
+        )
 
         adapter = WsVncAdapter(ws)
         await adapter.start()

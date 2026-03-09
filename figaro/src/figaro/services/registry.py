@@ -4,6 +4,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from figaro_nats import traced
+
 from figaro.models import ClientType
 from figaro.models.messages import WorkerStatus
 
@@ -170,6 +172,7 @@ class Registry:
         async with self._lock:
             return self._connections.get(client_id)
 
+    @traced("registry.set_worker_status")
     async def set_worker_status(self, worker_id: str, status: WorkerStatus) -> None:
         async with self._lock:
             if worker_id in self._connections:
@@ -230,6 +233,7 @@ class Registry:
                     return conn
             return None
 
+    @traced("registry.claim_idle_worker")
     async def claim_idle_worker(self) -> Connection | None:
         """Atomically find and claim an idle worker by setting status to BUSY.
 

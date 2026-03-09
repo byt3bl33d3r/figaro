@@ -14,9 +14,11 @@ import {
   DeliverPolicy,
 } from "nats";
 import os from "node:os";
+import { context } from "@opentelemetry/api";
 
 import { Subjects } from "./subjects";
 import { ensureStreams } from "./streams";
+import { injectTraceContext, extractTraceContext } from "../tracing/propagation";
 
 // biome-ignore lint: JSON payloads are loosely typed
 type JsonData = Record<string, any>;
@@ -198,7 +200,8 @@ export class NatsClient {
           if (this._clientType === "supervisor") {
             msg.respond(codec.encode({ status: "ok" }));
           }
-          await this.handleTask(data);
+          const extractedCtx = extractTraceContext(msg.headers ?? undefined);
+          await context.with(extractedCtx, () => this.handleTask(data));
         } catch (err) {
           console.error("[nats-client] Error processing task message:", err);
         }
@@ -247,6 +250,7 @@ export class NatsClient {
 
   /** Publish a task message (SDK output) via JetStream. */
   async publishTaskMessage(taskId: string, message: JsonData): Promise<void> {
+    const headers = injectTraceContext();
     await this.js!.publish(
       Subjects.taskMessage(taskId),
       codec.encode({
@@ -255,11 +259,13 @@ export class NatsClient {
         ...(this._clientType === "supervisor" ? { supervisor_id: this.clientId } : {}),
         ...message,
       }),
+      { headers },
     );
   }
 
   /** Publish task completion via JetStream. */
   async publishTaskComplete(taskId: string, result: unknown): Promise<void> {
+    const headers = injectTraceContext();
     await this.js!.publish(
       Subjects.taskComplete(taskId),
       codec.encode({
@@ -268,11 +274,13 @@ export class NatsClient {
         ...(this._clientType === "supervisor" ? { supervisor_id: this.clientId } : {}),
         result,
       }),
+      { headers },
     );
   }
 
   /** Publish task error via JetStream. */
   async publishTaskError(taskId: string, error: string): Promise<void> {
+    const headers = injectTraceContext();
     await this.js!.publish(
       Subjects.taskError(taskId),
       codec.encode({
@@ -281,6 +289,7 @@ export class NatsClient {
         ...(this._clientType === "supervisor" ? { supervisor_id: this.clientId } : {}),
         error,
       }),
+      { headers },
     );
   }
 

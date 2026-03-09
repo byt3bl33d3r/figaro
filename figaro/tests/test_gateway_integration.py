@@ -186,11 +186,13 @@ class TestHandleTaskCompleteGatewayRouting:
         nats_service.publish_gateway_send = AsyncMock()
 
         # Simulate task completion
-        await nats_service._handle_task_complete({
-            "task_id": task.task_id,
-            "result": "Found 3 flights to Paris starting at $299",
-            "worker_id": "worker-1",
-        })
+        await nats_service._handle_task_complete(
+            {
+                "task_id": task.task_id,
+                "result": "Found 3 flights to Paris starting at $299",
+                "worker_id": "worker-1",
+            }
+        )
 
         nats_service.publish_gateway_send.assert_called_once_with(
             "telegram",
@@ -224,11 +226,13 @@ class TestHandleTaskCompleteGatewayRouting:
             "session_id": "sess-abc",
         }
 
-        await nats_service._handle_task_complete({
-            "task_id": task.task_id,
-            "result": result_dict,
-            "worker_id": "worker-1",
-        })
+        await nats_service._handle_task_complete(
+            {
+                "task_id": task.task_id,
+                "result": result_dict,
+                "worker_id": "worker-1",
+            }
+        )
 
         nats_service.publish_gateway_send.assert_called_once_with(
             "telegram",
@@ -255,11 +259,13 @@ class TestHandleTaskCompleteGatewayRouting:
 
         nats_service.publish_gateway_send = AsyncMock()
 
-        await nats_service._handle_task_complete({
-            "task_id": task.task_id,
-            "result": "AAPL is at $185.50",
-            "worker_id": "worker-1",
-        })
+        await nats_service._handle_task_complete(
+            {
+                "task_id": task.task_id,
+                "result": "AAPL is at $185.50",
+                "worker_id": "worker-1",
+            }
+        )
 
         nats_service.publish_gateway_send.assert_called_once_with(
             "telegram",
@@ -285,11 +291,13 @@ class TestHandleTaskCompleteGatewayRouting:
 
         nats_service.publish_gateway_send = AsyncMock()
 
-        await nats_service._handle_task_complete({
-            "task_id": task.task_id,
-            "result": "Report generated",
-            "worker_id": "worker-1",
-        })
+        await nats_service._handle_task_complete(
+            {
+                "task_id": task.task_id,
+                "result": "Report generated",
+                "worker_id": "worker-1",
+            }
+        )
 
         nats_service.publish_gateway_send.assert_not_called()
 
@@ -314,11 +322,13 @@ class TestHandleTaskCompleteGatewayRouting:
 
         nats_service.publish_gateway_send = AsyncMock()
 
-        await nats_service._handle_task_complete({
-            "task_id": task.task_id,
-            "result": "Done",
-            "worker_id": "worker-1",
-        })
+        await nats_service._handle_task_complete(
+            {
+                "task_id": task.task_id,
+                "result": "Done",
+                "worker_id": "worker-1",
+            }
+        )
 
         nats_service.publish_gateway_send.assert_not_called()
 

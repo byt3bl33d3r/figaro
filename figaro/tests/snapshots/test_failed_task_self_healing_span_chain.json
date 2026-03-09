@@ -1,0 +1,54 @@
+[
+  {
+    "name": "ui.task_submission",
+    "depth": 0
+  },
+  {
+    "name": "orchestrator.api_create_task",
+    "depth": 2
+  },
+  {
+    "name": "task_manager.create_task",
+    "depth": 3
+  },
+  {
+    "name": "registry.claim_idle_worker",
+    "depth": 3
+  },
+  {
+    "name": "task_manager.assign_task",
+    "depth": 3
+  },
+  {
+    "name": "orchestrator.publish_task_assignment",
+    "depth": 3
+  },
+  {
+    "name": "worker.handle_task",
+    "depth": 5
+  },
+  {
+    "name": "worker.execute_task",
+    "depth": 6
+  },
+  {
+    "name": "worker.format_task_prompt",
+    "depth": 7
+  },
+  {
+    "name": "orchestrator.handle_task_complete",
+    "depth": 8
+  },
+  {
+    "name": "task_manager.complete_task",
+    "depth": 9
+  },
+  {
+    "name": "registry.set_worker_status",
+    "depth": 9
+  },
+  {
+    "name": "orchestrator.process_pending_queue",
+    "depth": 9
+  }
+]

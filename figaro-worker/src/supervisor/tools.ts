@@ -9,6 +9,7 @@ import { JSONCodec, type Subscription } from "nats";
 import { z } from "zod/v4";
 import type { NatsClient } from "../nats/client";
 import { Subjects } from "../nats/subjects";
+import { traced } from "../tracing/tracer";
 import { createPythonExecTool } from "../python/tools";
 
 // biome-ignore lint: JSON payloads are loosely typed
@@ -67,8 +68,14 @@ export function waitForDelegation(
   }
 
   let settle!: (value: JsonData) => void;
-  const promise = new Promise<JsonData>((res) => {
+  const innerPromise = new Promise<JsonData>((res) => {
     settle = res;
+  });
+
+  // Wrap the inner promise with tracing
+  const promise = traced("supervisor.wait_for_delegation", async (span) => {
+    span.setAttribute("task.id", taskId);
+    return innerPromise;
   });
 
   function resetTimer(): void {

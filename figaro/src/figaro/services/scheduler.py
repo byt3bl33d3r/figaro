@@ -225,12 +225,9 @@ class SchedulerService:
 
                 # Check if we should auto-disable
                 should_disable = (
-                    (
-                        scheduled_task.max_runs is not None
-                        and scheduled_task.run_count >= scheduled_task.max_runs
-                    )
-                    or scheduled_task.interval_seconds == 0
-                )
+                    scheduled_task.max_runs is not None
+                    and scheduled_task.run_count >= scheduled_task.max_runs
+                ) or scheduled_task.interval_seconds == 0
 
                 if should_disable:
                     scheduled_task.enabled = False
@@ -294,8 +291,10 @@ class SchedulerService:
                 await session.commit()
                 task = self._model_to_dataclass(model)
         else:
-            next_run = run_at if run_at else (
-                datetime.now(timezone.utc) + timedelta(seconds=interval_seconds)
+            next_run = (
+                run_at
+                if run_at
+                else (datetime.now(timezone.utc) + timedelta(seconds=interval_seconds))
             )
             task = ScheduledTask(
                 schedule_id=schedule_id,

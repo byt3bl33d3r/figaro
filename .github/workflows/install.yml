@@ -1,0 +1,101 @@
+name: install.sh
+
+on:
+  push:
+    paths:
+      - "install.sh"
+      - "docker/**"
+      - ".github/workflows/install.yml"
+  pull_request:
+    paths:
+      - "install.sh"
+      - "docker/**"
+      - ".github/workflows/install.yml"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COMPOSE_CMD: docker compose -f docker/docker-compose.yml -f docker/docker-compose.prod-local.yml
+
+jobs:
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Lint install.sh
+        run: shellcheck install.sh
+
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      # ---------- argument parsing ----------
+      - name: Verify argument parsing
+        run: |
+          bash install.sh help
+          ! bash install.sh up bogus 2>&1
+          ! bash install.sh up prod 2>&1
+          ! bash install.sh foobar 2>&1
+
+      # ---------- pipe into bash (production install path) ----------
+      - name: Create dummy Claude credentials
+        run: |
+          mkdir -p ~/.claude
+          echo '{}' > ~/.claude.json
+          echo '{}' > ~/.claude/.credentials.json
+
+      - name: Install via pipe (simulates curl | bash)
+        run: cat install.sh | bash -s -- prod-local
+
+      # ---------- verify services ----------
+      - name: Wait for healthy services
+        run: |
+          check_health() {
+            local svc="$1" timeout_s="${2:-180}"
+            echo "Waiting for $svc to be healthy..."
+            timeout "$timeout_s" bash -c "
+              while true; do
+                status=\$($COMPOSE_CMD ps --format json \"$svc\" | head -1 | jq -r '.Health // empty' 2>/dev/null)
+                if [[ \"\$status\" == 'healthy' ]]; then break; fi
+                sleep 5
+              done
+            "
+            echo "$svc is healthy"
+          }
+
+          check_health postgres
+          check_health nats
+          check_health guacd
+          check_health orchestrator 300
+
+      - name: Verify all services are running
+        run: |
+          echo "--- docker compose ps ---"
+          $COMPOSE_CMD ps
+
+          for svc in postgres nats guacd orchestrator gateway worker supervisor; do
+            running=$($COMPOSE_CMD ps --format json "$svc" | jq -s '[.[] | select(.State == "running")] | length')
+            if [[ "$running" -eq 0 ]]; then
+              echo "FAIL: $svc has no running containers"
+              $COMPOSE_CMD logs "$svc" --tail=30
+              exit 1
+            fi
+            echo "OK: $svc ($running running)"
+          done
+
+      - name: Test orchestrator API responds
+        run: |
+          curl -sf http://localhost:8000/api/config | jq .
+
+      # ---------- cleanup ----------
+      - name: Dump logs on failure
+        if: failure()
+        run: $COMPOSE_CMD logs --tail=50
+
+      - name: Cleanup
+        if: always()
+        run: $COMPOSE_CMD down -v

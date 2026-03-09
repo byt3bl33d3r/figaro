@@ -38,9 +38,7 @@ class DesktopWorkerRepository:
     async def get(self, worker_id: str) -> DesktopWorkerModel | None:
         """Get a desktop worker by ID."""
         result = await self.session.execute(
-            select(DesktopWorkerModel).where(
-                DesktopWorkerModel.worker_id == worker_id
-            )
+            select(DesktopWorkerModel).where(DesktopWorkerModel.worker_id == worker_id)
         )
         return result.scalar_one_or_none()
 
@@ -124,8 +122,6 @@ class DesktopWorkerRepository:
     async def delete(self, worker_id: str) -> bool:
         """Delete a desktop worker."""
         result = await self.session.execute(
-            delete(DesktopWorkerModel).where(
-                DesktopWorkerModel.worker_id == worker_id
-            )
+            delete(DesktopWorkerModel).where(DesktopWorkerModel.worker_id == worker_id)
         )
         return (result.rowcount or 0) > 0

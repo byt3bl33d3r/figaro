@@ -7,13 +7,14 @@ import functools
 import logging
 from typing import Any
 
-from figaro_nats import NatsConnection, Subjects
+from figaro_nats import NatsConnection, Subjects, traced
 
 from .registry import ChannelRegistry
 
 logger = logging.getLogger(__name__)
 
 
+@traced("gateway.handle_channel_message")
 async def _handle_channel_message(
     chat_id: str,
     text: str,
@@ -35,6 +36,7 @@ async def _handle_channel_message(
     logger.debug(f"Published message from {channel_name} chat {chat_id} to NATS")
 
 
+@traced("gateway.handle_send_message")
 async def _handle_send_message(
     data: dict[str, Any],
     *,
@@ -77,20 +79,14 @@ class NatsRouter:
         # Start all registered channels
         for channel in self._registry.get_all():
             # Register message callback BEFORE starting so it's available during start
-            channel.on_message(
-                functools.partial(
-                    _handle_channel_message, conn=self._conn, channel_name=channel.name
-                )
-            )
+            channel.on_message(functools.partial(_handle_channel_message, conn=self._conn, channel_name=channel.name))
 
             await channel.start()
 
             # Subscribe to NATS subjects for this channel
             sub = await self._conn.subscribe(
                 Subjects.gateway_send(channel.name),
-                functools.partial(
-                    _handle_send_message, registry=self._registry, channel_name=channel.name
-                ),
+                functools.partial(_handle_send_message, registry=self._registry, channel_name=channel.name),
             )
             self._subscriptions.append(sub)
 
@@ -145,6 +141,7 @@ class NatsRouter:
 
         await self._conn.close()
 
+    @traced("gateway.handle_help_request")
     async def _handle_help_request(self, data: dict[str, Any]) -> None:
         """Route help request to appropriate channel(s)."""
         # Broadcast help request to all channels for now

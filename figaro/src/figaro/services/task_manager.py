@@ -8,6 +8,8 @@ from typing import Any
 
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from figaro_nats import traced
+
 from figaro.db.models import TaskModel
 from figaro.db.repositories.tasks import TaskRepository
 
@@ -89,6 +91,7 @@ class TaskManager:
                         self._pending_queue.append(task.task_id)
             logger.info(f"Loaded {len(pending_tasks)} pending tasks from database")
 
+    @traced("task_manager.create_task")
     async def create_task(
         self,
         prompt: str,
@@ -159,7 +162,9 @@ class TaskManager:
         if self._session_factory:
             async with self._session_factory() as session:
                 repo = TaskRepository(session)
-                models = await repo.list_all(status=status, limit=limit, worker_id=worker_id)
+                models = await repo.list_all(
+                    status=status, limit=limit, worker_id=worker_id
+                )
                 tasks = []
                 for model in models:
                     task = Task.from_model(model)
@@ -191,7 +196,11 @@ class TaskManager:
             async with self._session_factory() as session:
                 repo = TaskRepository(session)
                 models = await repo.search_by_prompt(
-                    query=query, status=status, limit=limit, offset=offset, include_messages=include_messages,
+                    query=query,
+                    status=status,
+                    limit=limit,
+                    offset=offset,
+                    include_messages=include_messages,
                 )
                 tasks = []
                 for model in models:
@@ -204,13 +213,10 @@ class TaskManager:
         # Fall back to in-memory search
         async with self._lock:
             query_lower = query.lower()
-            tasks = [
-                t for t in self._tasks.values()
-                if query_lower in t.prompt.lower()
-            ]
+            tasks = [t for t in self._tasks.values() if query_lower in t.prompt.lower()]
             if status:
                 tasks = [t for t in tasks if t.status.value == status]
-            tasks = tasks[offset:offset + limit]
+            tasks = tasks[offset : offset + limit]
             return tasks
 
     async def get_tasks_by_worker(self, worker_id: str) -> list[Task]:
@@ -219,6 +225,7 @@ class TaskManager:
                 task for task in self._tasks.values() if task.worker_id == worker_id
             ]
 
+    @traced("task_manager.assign_task")
     async def assign_task(self, task_id: str, worker_id: str) -> Task | None:
         # Update database first
         if self._session_factory:
@@ -236,7 +243,9 @@ class TaskManager:
             logger.info(f"Assigned task {task_id} to worker {worker_id}")
             return task
 
-    async def start_task(self, task_id: str, session_id: str | None = None) -> Task | None:
+    async def start_task(
+        self, task_id: str, session_id: str | None = None
+    ) -> Task | None:
         # Update database first
         if self._session_factory:
             async with self._session_factory() as session:
@@ -253,6 +262,7 @@ class TaskManager:
             logger.info(f"Task {task_id} started running")
             return task
 
+    @traced("task_manager.complete_task")
     async def complete_task(self, task_id: str, result: Any = None) -> Task | None:
         # Update database first
         if self._session_factory:

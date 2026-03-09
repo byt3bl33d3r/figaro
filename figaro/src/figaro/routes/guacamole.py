@@ -105,9 +105,7 @@ async def get_guacamole_token(
     password = conn.vnc_password or settings.vnc_password
     username = conn.vnc_username or settings.vnc_username
 
-    connection_settings = _build_connection_settings(
-        hostname, port, password, username
-    )
+    connection_settings = _build_connection_settings(hostname, port, password, username)
 
     token_data = {
         "connection": {

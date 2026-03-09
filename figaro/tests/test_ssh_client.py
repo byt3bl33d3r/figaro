@@ -98,7 +98,9 @@ class TestRunCommand:
         cm.__aenter__ = AsyncMock(return_value=mock_conn)
         cm.__aexit__ = AsyncMock(return_value=False)
 
-        with patch("figaro.services.ssh_client.asyncssh.connect", return_value=cm) as mock_connect:
+        with patch(
+            "figaro.services.ssh_client.asyncssh.connect", return_value=cm
+        ) as mock_connect:
             await run_command("myhost", 2222, "admin", "secret", "ls")
 
         mock_connect.assert_called_once_with(

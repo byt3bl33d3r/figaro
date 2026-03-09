@@ -1,0 +1,42 @@
+[
+  {
+    "name": "ui.task_submission",
+    "depth": 0
+  },
+  {
+    "name": "orchestrator.api_create_task",
+    "depth": 2
+  },
+  {
+    "name": "task_manager.create_task",
+    "depth": 3
+  },
+  {
+    "name": "supervisor.handle_task",
+    "depth": 4
+  },
+  {
+    "name": "supervisor.wait_for_delegation",
+    "depth": 5
+  },
+  {
+    "name": "orchestrator.handle_task_complete",
+    "depth": 6
+  },
+  {
+    "name": "task_manager.complete_task",
+    "depth": 7
+  },
+  {
+    "name": "registry.set_worker_status (repeat)",
+    "depth": 7
+  },
+  {
+    "name": "orchestrator.process_pending_queue",
+    "depth": 7
+  },
+  {
+    "name": "task_manager.assign_task",
+    "depth": 3
+  }
+]

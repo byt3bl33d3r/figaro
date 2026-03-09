@@ -4,6 +4,8 @@ import asyncio
 import logging
 import signal
 
+from figaro_nats import init_tracing
+
 from .config import Settings
 from .core.registry import ChannelRegistry
 from .core.router import NatsRouter
@@ -14,6 +16,8 @@ logger = logging.getLogger(__name__)
 
 async def run_gateway() -> None:
     """Run the gateway service."""
+    init_tracing("figaro-gateway")
+
     settings = Settings()
 
     logging.basicConfig(

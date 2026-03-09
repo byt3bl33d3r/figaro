@@ -7,6 +7,7 @@ WORKDIR /app/figaro-ui
 COPY figaro-ui/package*.json ./
 RUN npm ci
 COPY figaro-ui/ ./
+ARG VITE_OTEL_EXPORTER_OTLP_ENDPOINT=""
 RUN npm run build
 
 # Stage 2: Build Python wheel and download dependencies

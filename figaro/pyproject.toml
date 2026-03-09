@@ -23,6 +23,9 @@ dependencies = [
     "guapy>=1.0.0",
     "asyncssh>=2.17.0",
     "telnetlib3>=2.0.0",
+    "opentelemetry-instrumentation-fastapi>=0.50b0",
+    "opentelemetry-instrumentation-sqlalchemy>=0.50b0",
+    "opentelemetry-instrumentation-logging>=0.50b0",
 ]
 
 [tool.uv.sources]
@@ -61,6 +64,10 @@ addopts = [
     "--cov-report=html:htmlcov",
     "--cov-config=pyproject.toml",
     "-x",
+    "-m", "not live",
+]
+markers = [
+    "live: requires live NATS and Jaeger stack (deselected by default)",
 ]
 
 [tool.coverage.run]

@@ -1,11 +1,56 @@
 services:
+  jaeger:
+    image: jaegertracing/jaeger:2.16.0
+    environment:
+      JAEGER_CONFIG: |
+        receivers:
+          otlp:
+            protocols:
+              http:
+                endpoint: "0.0.0.0:4318"
+                cors:
+                  allowed_origins: ["*"]
+                  allowed_headers: ["*"]
+              grpc:
+                endpoint: "0.0.0.0:4317"
+        exporters:
+          jaeger_storage_exporter:
+            trace_storage: memstore
+        extensions:
+          jaeger_storage:
+            backends:
+              memstore:
+                memory:
+                  max_traces: 50000
+          jaeger_query:
+            storage:
+              traces: memstore
+        service:
+          extensions: [jaeger_storage, jaeger_query]
+          pipelines:
+            traces:
+              receivers: [otlp]
+              exporters: [jaeger_storage_exporter]
+    command: ["--config", "env:JAEGER_CONFIG"]
+    ports:
+      - "127.0.0.1:16686:16686"   # Jaeger UI
+      - "127.0.0.1:4318:4318"     # OTLP HTTP receiver
+    networks:
+      - figaro-net
+
   nats:
     ports:
       - "127.0.0.1:8443:8443"
 
   orchestrator:
+    build:
+      args:
+        VITE_OTEL_EXPORTER_OTLP_ENDPOINT: "http://localhost:4318"
     ports:
       - "127.0.0.1:${ORCHESTRATOR_PORT:-8000}:8000"
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_SERVICE_NAME: "figaro-orchestrator"
 
   desktop:
     build:
@@ -23,6 +68,21 @@ services:
     shm_size: '1gb'
     security_opt:
       - seccomp:seccomp_profile.json
+
+  worker:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_SERVICE_NAME: "figaro-worker"
+
+  supervisor:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_SERVICE_NAME: "figaro-supervisor"
+
+  gateway:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: "http://jaeger:4318"
+      OTEL_SERVICE_NAME: "figaro-gateway"
 
   test-target:
     build:

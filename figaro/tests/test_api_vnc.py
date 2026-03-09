@@ -82,6 +82,7 @@ def _mock_pool_connection(mock_client, captured=None):
     If *captured* is a dict, the host/port/username/password arguments are
     stored in it so tests can inspect what the handler passed.
     """
+
     @asynccontextmanager
     async def _connection(host, port, username=None, password=None):
         if captured is not None:
@@ -90,6 +91,7 @@ def _mock_pool_connection(mock_client, captured=None):
             captured["username"] = username
             captured["password"] = password
         yield mock_client
+
     return _connection
 
 
@@ -99,6 +101,7 @@ def _mock_pool_ws_connection(mock_client, captured=None):
     If *captured* is a dict, the url/username/password arguments are stored in
     it so tests can inspect what the handler passed.
     """
+
     @asynccontextmanager
     async def _ws_connection(url, username=None, password=None):
         if captured is not None:
@@ -106,6 +109,7 @@ def _mock_pool_ws_connection(mock_client, captured=None):
             captured["username"] = username
             captured["password"] = password
         yield mock_client
+
     return _ws_connection
 
 
@@ -160,7 +164,10 @@ class TestApiVncScreenshot:
             "height": 720,
         }
         mock_screenshot.assert_awaited_once_with(
-            mock_client, 70, None, None,
+            mock_client,
+            70,
+            None,
+            None,
         )
 
 
@@ -201,7 +208,9 @@ class TestApiVncKey:
             )
 
         assert result == {"ok": True}
-        mock_key.assert_awaited_once_with(mock_client, "Return", None, hold_seconds=None)
+        mock_key.assert_awaited_once_with(
+            mock_client, "Return", None, hold_seconds=None
+        )
 
 
 class TestApiVncClick:
@@ -296,9 +305,7 @@ class TestApiVncCredentialFallback:
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):
-            await nats_service._api_vnc(
-                {"worker_id": "mac-1", "action": "screenshot"}
-            )
+            await nats_service._api_vnc({"worker_id": "mac-1", "action": "screenshot"})
 
         # Port 5900 from the URL, not 5901 from settings
         assert captured["host"] == "mac-host"
@@ -333,14 +340,14 @@ class TestApiVncCredentialFallback:
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):
-            await nats_service._api_vnc(
-                {"worker_id": "mac-2", "action": "screenshot"}
-            )
+            await nats_service._api_vnc({"worker_id": "mac-2", "action": "screenshot"})
 
         assert captured["username"] == "admin"
         assert captured["password"] == "secret"
 
-    async def test_per_worker_credentials_override_url(self, nats_service, registry, mock_settings):
+    async def test_per_worker_credentials_override_url(
+        self, nats_service, registry, mock_settings
+    ):
         """Per-worker vnc_username/vnc_password fields take priority over URL creds."""
         mock_settings.vnc_password = None
         mock_settings.vnc_username = None
@@ -369,9 +376,7 @@ class TestApiVncCredentialFallback:
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):
-            await nats_service._api_vnc(
-                {"worker_id": "mac-3", "action": "screenshot"}
-            )
+            await nats_service._api_vnc({"worker_id": "mac-3", "action": "screenshot"})
 
         assert captured["username"] == "override-user"
         assert captured["password"] == "override-pass"
@@ -380,7 +385,9 @@ class TestApiVncCredentialFallback:
 class TestApiVncWsSchemeRouting:
     """Test that ws:// URLs use pool.connection() with settings.vnc_port."""
 
-    async def test_ws_uses_settings_vnc_port(self, nats_service, registry, mock_settings):
+    async def test_ws_uses_settings_vnc_port(
+        self, nats_service, registry, mock_settings
+    ):
         """ws:// URL should route through pool.connection() using settings.vnc_port."""
         await _register_worker(registry)
 
@@ -421,7 +428,8 @@ class TestApiVncWssSchemeRouting:
         mock_client = MagicMock()
         captured = {}
         nats_service._vnc_pool.ws_connection = _mock_pool_ws_connection(
-            mock_client, captured,
+            mock_client,
+            captured,
         )
 
         with patch(
@@ -457,7 +465,9 @@ class TestApiVncWssSchemeRouting:
         async def _spy_connection(host, port, username=None, password=None):
             nonlocal tcp_called
             tcp_called = True
-            async with original_connection(host, port, username=username, password=password) as c:
+            async with original_connection(
+                host, port, username=username, password=password
+            ) as c:
                 yield c
 
         nats_service._vnc_pool.connection = _spy_connection
@@ -488,7 +498,8 @@ class TestApiVncWssSchemeRouting:
         mock_client = MagicMock()
         captured = {}
         nats_service._vnc_pool.ws_connection = _mock_pool_ws_connection(
-            mock_client, captured,
+            mock_client,
+            captured,
         )
 
         with patch(
@@ -523,7 +534,10 @@ class TestApiVncUnlock:
 
         assert result == {"ok": True}
         mock_unlock.assert_awaited_once_with(
-            mock_client, "vscode", username=None, click_screen=False,
+            mock_client,
+            "vscode",
+            username=None,
+            click_screen=False,
         )
 
     async def test_api_vnc_unlock_with_click_screen(self, nats_service, registry):
@@ -542,7 +556,10 @@ class TestApiVncUnlock:
 
         assert result == {"ok": True}
         mock_unlock.assert_awaited_once_with(
-            mock_client, "vscode", username=None, click_screen=True,
+            mock_client,
+            "vscode",
+            username=None,
+            click_screen=True,
         )
 
     async def test_api_vnc_unlock_with_username(self, nats_service, registry):
@@ -562,10 +579,15 @@ class TestApiVncUnlock:
 
         assert result == {"ok": True}
         mock_unlock.assert_awaited_once_with(
-            mock_client, "vscode", username="desktopuser", click_screen=False,
+            mock_client,
+            "vscode",
+            username="desktopuser",
+            click_screen=False,
         )
 
-    async def test_api_vnc_unlock_no_password(self, nats_service, registry, mock_settings):
+    async def test_api_vnc_unlock_no_password(
+        self, nats_service, registry, mock_settings
+    ):
         """Unlock returns error when no password is configured."""
         mock_settings.vnc_password = None
         await _register_worker(registry)
@@ -641,7 +663,9 @@ class TestApiVncVncSchemeRouting:
                 {"worker_id": "vnc-worker-2", "action": "screenshot"}
             )
 
-        assert not ws_called, "pool.ws_connection() should not be called for vnc:// URLs"
+        assert not ws_called, (
+            "pool.ws_connection() should not be called for vnc:// URLs"
+        )
 
     async def test_vnc_default_port_when_not_specified(self, nats_service, registry):
         """vnc:// URL without explicit port should default to 5900."""

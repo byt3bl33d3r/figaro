@@ -11,8 +11,16 @@ import nats
 from nats.aio.client import Client
 from nats.js import JetStreamContext
 from nats.js.api import DeliverPolicy, ConsumerConfig
+from opentelemetry import context as otel_context
+
+from opentelemetry import trace
+
+from figaro_nats.tracing import TRACER_NAME, extract_trace_context, inject_trace_context
 
 logger = logging.getLogger(__name__)
+
+
+_tracer = trace.get_tracer(TRACER_NAME)
 
 
 async def _subscribe_cb(
@@ -24,7 +32,13 @@ async def _subscribe_cb(
     """Callback for Core NATS subscriptions — decodes JSON and delegates to handler."""
     try:
         data = json.loads(msg.data.decode()) if msg.data else {}
-        await handler(data)
+        ctx = extract_trace_context(msg.headers)
+        token = otel_context.attach(ctx)
+        try:
+            with _tracer.start_as_current_span(f"nats.recv {subject}"):
+                await handler(data)
+        finally:
+            otel_context.detach(token)
     except Exception:
         logger.exception("Error handling message on %s", subject)
 
@@ -38,8 +52,14 @@ async def _subscribe_request_cb(
     """Callback for request/reply subscriptions — decodes JSON, calls handler, sends response."""
     try:
         data = json.loads(msg.data.decode()) if msg.data else {}
-        result = await handler(data)
-        await msg.respond(json.dumps(result or {}).encode())
+        ctx = extract_trace_context(msg.headers)
+        token = otel_context.attach(ctx)
+        try:
+            with _tracer.start_as_current_span(f"nats.recv {subject}"):
+                result = await handler(data)
+                await msg.respond(json.dumps(result or {}).encode())
+        finally:
+            otel_context.detach(token)
     except Exception:
         logger.exception("Error handling request on %s", subject)
         error_resp = json.dumps({"error": "Internal error"}).encode()
@@ -58,8 +78,14 @@ async def _js_subscribe_cb(
     """Callback for JetStream subscriptions — decodes JSON, calls handler, acks/naks."""
     try:
         data = json.loads(msg.data.decode()) if msg.data else {}
-        await handler(data)
-        await msg.ack()
+        ctx = extract_trace_context(msg.headers)
+        token = otel_context.attach(ctx)
+        try:
+            with _tracer.start_as_current_span(f"nats.recv {subject}"):
+                await handler(data)
+                await msg.ack()
+        finally:
+            otel_context.detach(token)
     except Exception:
         logger.exception("Error handling JetStream message on %s", subject)
         # NAK so message can be redelivered
@@ -69,7 +95,9 @@ async def _js_subscribe_cb(
 class NatsConnection:
     """Wrapper around nats.aio.client.Client with JSON serialization and reconnect handling."""
 
-    def __init__(self, url: str = "nats://localhost:4222", name: str | None = None) -> None:
+    def __init__(
+        self, url: str = "nats://localhost:4222", name: str | None = None
+    ) -> None:
         self._url = url
         self._name = name
         self._nc: Client | None = None
@@ -98,7 +126,9 @@ class NatsConnection:
         logger.warning("NATS disconnected")
 
     async def _on_nats_reconnected(self) -> None:
-        logger.info("NATS reconnected to %s", self._nc.connected_url if self._nc else "unknown")
+        logger.info(
+            "NATS reconnected to %s", self._nc.connected_url if self._nc else "unknown"
+        )
 
     async def connect(self) -> None:
         """Connect to NATS server with automatic reconnection."""
@@ -120,15 +150,29 @@ class NatsConnection:
             await self._nc.drain()
             logger.info("NATS connection drained and closed")
 
-    async def publish(self, subject: str, data: dict[str, Any] | None = None) -> None:
+    async def publish(
+        self,
+        subject: str,
+        data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         """Publish a JSON message to a subject."""
-        payload = json.dumps(data or {}).encode()
-        await self.nc.publish(subject, payload)
+        with _tracer.start_as_current_span(f"nats.publish {subject}"):
+            payload = json.dumps(data or {}).encode()
+            headers = inject_trace_context(headers)
+            await self.nc.publish(subject, payload, headers=headers)
 
-    async def js_publish(self, subject: str, data: dict[str, Any] | None = None) -> None:
+    async def js_publish(
+        self,
+        subject: str,
+        data: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         """Publish a JSON message via JetStream (for durable task events)."""
-        payload = json.dumps(data or {}).encode()
-        await self.js.publish(subject, payload)
+        with _tracer.start_as_current_span(f"nats.js_publish {subject}"):
+            payload = json.dumps(data or {}).encode()
+            headers = inject_trace_context(headers)
+            await self.js.publish(subject, payload, headers=headers)
 
     async def subscribe(
         self,
@@ -147,11 +191,14 @@ class NatsConnection:
         subject: str,
         data: dict[str, Any] | None = None,
         timeout: float = 10.0,
+        headers: dict[str, str] | None = None,
     ) -> dict[str, Any]:
         """Send a request and wait for a response (request/reply pattern)."""
-        payload = json.dumps(data or {}).encode()
-        msg = await self.nc.request(subject, payload, timeout=timeout)
-        return json.loads(msg.data.decode()) if msg.data else {}
+        with _tracer.start_as_current_span(f"nats.request {subject}"):
+            payload = json.dumps(data or {}).encode()
+            headers = inject_trace_context(headers)
+            msg = await self.nc.request(subject, payload, timeout=timeout, headers=headers)
+            return json.loads(msg.data.decode()) if msg.data else {}
 
     async def subscribe_request(
         self,

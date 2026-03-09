@@ -112,13 +112,19 @@ class HelpRequestManager:
                         ).total_seconds()
                         remaining = max(0, model.timeout_seconds - elapsed)
                         if remaining > 0:
-                            self._timeout_tasks[request.request_id] = asyncio.create_task(
-                                self._handle_timeout(request.request_id, int(remaining))
+                            self._timeout_tasks[request.request_id] = (
+                                asyncio.create_task(
+                                    self._handle_timeout(
+                                        request.request_id, int(remaining)
+                                    )
+                                )
                             )
                         else:
                             # Already expired, timeout immediately
-                            self._timeout_tasks[request.request_id] = asyncio.create_task(
-                                self._handle_timeout(request.request_id, 0)
+                            self._timeout_tasks[request.request_id] = (
+                                asyncio.create_task(
+                                    self._handle_timeout(request.request_id, 0)
+                                )
                             )
 
                 logger.info(

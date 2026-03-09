@@ -937,9 +937,7 @@ class TestTriggerScheduledTask:
     """Tests for manually triggering scheduled tasks."""
 
     @pytest.mark.asyncio
-    async def test_trigger_scheduled_task(
-        self, scheduler, registry, mock_nats_service
-    ):
+    async def test_trigger_scheduled_task(self, scheduler, registry, mock_nats_service):
         """Test manually triggering a scheduled task executes it."""
         scheduled_task = await scheduler.create_scheduled_task(
             name="Trigger Test",
@@ -956,9 +954,7 @@ class TestTriggerScheduledTask:
         ) as mock_claim:
             mock_claim.return_value = mock_worker
 
-            result = await scheduler.trigger_scheduled_task(
-                scheduled_task.schedule_id
-            )
+            result = await scheduler.trigger_scheduled_task(scheduled_task.schedule_id)
 
             assert result is not None
             assert result.schedule_id == scheduled_task.schedule_id
@@ -1000,9 +996,7 @@ class TestTriggerScheduledTask:
         ) as mock_claim:
             mock_claim.return_value = mock_worker
 
-            result = await scheduler.trigger_scheduled_task(
-                scheduled_task.schedule_id
-            )
+            result = await scheduler.trigger_scheduled_task(scheduled_task.schedule_id)
 
             assert result is not None
 

@@ -105,6 +105,7 @@ class WsVncAdapter:
         self._writer.close()
         await self._ws.close()
 
+
 # Map common key name variants to asyncvnc key_codes names
 _KEY_ALIASES: dict[str, str] = {
     "ctrl": "Ctrl",
@@ -213,7 +214,14 @@ def _process_screenshot(
     buffer = io.BytesIO()
     rgb_image.save(buffer, format="JPEG", quality=quality)
     b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
-    return b64, "image/jpeg", original_width, original_height, display_width, display_height
+    return (
+        b64,
+        "image/jpeg",
+        original_width,
+        original_height,
+        display_width,
+        display_height,
+    )
 
 
 async def screenshot_with_client(
@@ -343,7 +351,9 @@ async def vnc_screenshot(
     (preserving aspect ratio) so that Claude receives coordinates in a
     known, smaller space.
     """
-    async with asyncvnc.connect(host, port=port, username=username, password=password) as client:
+    async with asyncvnc.connect(
+        host, port=port, username=username, password=password
+    ) as client:
         return await screenshot_with_client(client, quality, max_width, max_height)
 
 
@@ -351,7 +361,9 @@ async def vnc_type(
     host: str, port: int, password: str | None, text: str, username: str | None = None
 ) -> None:
     """Connect to VNC and type text characters one by one."""
-    async with asyncvnc.connect(host, port=port, username=username, password=password) as client:
+    async with asyncvnc.connect(
+        host, port=port, username=username, password=password
+    ) as client:
         await type_with_client(client, text)
 
 
@@ -371,7 +383,9 @@ async def vnc_key(
 
     When *hold_seconds* is given, the keys are held for that duration.
     """
-    async with asyncvnc.connect(host, port=port, username=username, password=password) as client:
+    async with asyncvnc.connect(
+        host, port=port, username=username, password=password
+    ) as client:
         await key_with_client(client, key, modifiers, hold_seconds=hold_seconds)
 
 
@@ -388,5 +402,7 @@ async def vnc_click(
 
     *button* can be ``"left"`` (default), ``"middle"``, or ``"right"``.
     """
-    async with asyncvnc.connect(host, port=port, username=username, password=password) as client:
+    async with asyncvnc.connect(
+        host, port=port, username=username, password=password
+    ) as client:
         await click_with_client(client, x, y, button)

@@ -216,7 +216,9 @@ class TestTaskRepository:
         await db_session.commit()
 
         await repo.append_message(task.task_id, {"__type__": "user", "text": "First"})
-        await repo.append_message(task.task_id, {"__type__": "assistant", "text": "Second"})
+        await repo.append_message(
+            task.task_id, {"__type__": "assistant", "text": "Second"}
+        )
         await repo.append_message(task.task_id, {"__type__": "user", "text": "Third"})
         await db_session.commit()
 
@@ -260,7 +262,9 @@ class TestTaskRepository:
         assert started.status == TaskStatus.RUNNING
 
         # Add messages during execution
-        await repo.append_message(task.task_id, {"__type__": "status", "msg": "Working..."})
+        await repo.append_message(
+            task.task_id, {"__type__": "status", "msg": "Working..."}
+        )
         await db_session.commit()
 
         # Complete

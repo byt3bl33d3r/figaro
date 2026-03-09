@@ -8,6 +8,7 @@ import type { NatsClient } from "../nats/client";
 import type { TaskPayload } from "../types";
 import { serializeMessage } from "../shared/serialize";
 import { LoopDetectionSession, buildLoopDetectionHooks, type LoopDetectionConfig } from "../shared/loop-detection";
+import { traced } from "../tracing/tracer";
 import { HelpRequestHandler } from "./help-request";
 import { formatTaskPrompt, WORKER_SYSTEM_PROMPT } from "./prompt-formatter";
 import { createDesktopToolsServer } from "./tools";
@@ -35,31 +36,34 @@ export class TaskExecutor {
   }
 
   async handleTask(payload: TaskPayload): Promise<void> {
-    const taskId = payload.task_id;
-    const prompt = payload.prompt ?? "";
-    const optionsDict = (payload.options ?? {}) as Record<string, unknown>;
+    await traced("worker.handle_task", async (span) => {
+      const taskId = payload.task_id;
+      const prompt = payload.prompt ?? "";
+      const optionsDict = (payload.options ?? {}) as Record<string, unknown>;
 
-    if (!taskId) {
-      console.error("[executor] Received task without task_id");
-      return;
-    }
-
-    console.log(`[executor] Executing task ${taskId}: ${prompt.slice(0, 50)}...`);
-
-    try {
-      await this.executeTask(taskId, prompt, optionsDict);
-    } catch (e) {
-      if (this.abortController?.signal.aborted) {
-        console.log(`[executor] Task ${taskId} was stopped`);
+      if (!taskId) {
+        console.error("[executor] Received task without task_id");
         return;
       }
-      const errMsg = e instanceof Error ? e.message : String(e);
-      console.error(`[executor] Task ${taskId} failed: ${errMsg}`);
-      await this.client.publishTaskError(taskId, errMsg);
-    } finally {
-      this.currentTaskId = null;
-      this.abortController = null;
-    }
+
+      span.setAttribute("task.id", taskId);
+      console.log(`[executor] Executing task ${taskId}: ${prompt.slice(0, 50)}...`);
+
+      try {
+        await this.executeTask(taskId, prompt, optionsDict);
+      } catch (e) {
+        if (this.abortController?.signal.aborted) {
+          console.log(`[executor] Task ${taskId} was stopped`);
+          return;
+        }
+        const errMsg = e instanceof Error ? e.message : String(e);
+        console.error(`[executor] Task ${taskId} failed: ${errMsg}`);
+        await this.client.publishTaskError(taskId, errMsg);
+      } finally {
+        this.currentTaskId = null;
+        this.abortController = null;
+      }
+    });
   }
 
   stopTask(taskId: string): boolean {
@@ -76,10 +80,14 @@ export class TaskExecutor {
     prompt: string,
     optionsDict: Record<string, unknown>,
   ): Promise<void> {
+    await traced("worker.execute_task", async (span) => {
     this.currentTaskId = taskId;
+    span.setAttribute("task.id", taskId);
 
     const startUrl = optionsDict.start_url as string | undefined;
-    const formattedPrompt = formatTaskPrompt(prompt, startUrl);
+    const formattedPrompt = await traced("worker.format_task_prompt", async () => {
+      return formatTaskPrompt(prompt, startUrl);
+    });
 
     const { server: desktopTools, destroySession } = createDesktopToolsServer(this.client);
 
@@ -186,5 +194,6 @@ export class TaskExecutor {
 
     await this.client.publishTaskComplete(taskId, resultMessage);
     console.log(`[executor] Task ${taskId} completed`);
+    });
   }
 }

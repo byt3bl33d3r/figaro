@@ -183,7 +183,10 @@ class TestScheduledTaskRepository:
             interval_seconds=3600,
         )
         # Set next_run_at to the past
-        await repo.update(task1.schedule_id, next_run_at=datetime.now(timezone.utc) - timedelta(hours=1))
+        await repo.update(
+            task1.schedule_id,
+            next_run_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
         await db_session.commit()
 
         # Create a task that's not due yet
@@ -207,7 +210,10 @@ class TestScheduledTaskRepository:
             start_url="https://example.com",
             interval_seconds=3600,
         )
-        await repo.update(task.schedule_id, next_run_at=datetime.now(timezone.utc) - timedelta(hours=1))
+        await repo.update(
+            task.schedule_id,
+            next_run_at=datetime.now(timezone.utc) - timedelta(hours=1),
+        )
         await db_session.commit()
 
         # Disable it
@@ -383,7 +389,10 @@ class TestScheduledTaskRepository:
         # Simulate 3 executions
         for i in range(3):
             # Set as due
-            await repo.update(task.schedule_id, next_run_at=datetime.now(timezone.utc) - timedelta(minutes=1))
+            await repo.update(
+                task.schedule_id,
+                next_run_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+            )
             await db_session.commit()
 
             due = await repo.get_due_tasks()
@@ -400,7 +409,10 @@ class TestScheduledTaskRepository:
         assert final.next_run_at is None
 
         # Verify no longer due
-        await repo.update(task.schedule_id, next_run_at=datetime.now(timezone.utc) - timedelta(minutes=1))
+        await repo.update(
+            task.schedule_id,
+            next_run_at=datetime.now(timezone.utc) - timedelta(minutes=1),
+        )
         await db_session.commit()
         due = await repo.get_due_tasks()
         assert len(due) == 0  # Disabled, so not due
@@ -421,7 +433,9 @@ class TestScheduledTaskRepository:
         assert task.self_learning_max_runs == 10
         assert task.self_learning_run_count == 0
 
-    async def test_create_default_self_learning_max_runs_is_none(self, repo, db_session):
+    async def test_create_default_self_learning_max_runs_is_none(
+        self, repo, db_session
+    ):
         """Test that self_learning_max_runs defaults to None (unlimited)."""
         task = await repo.create(
             name="Task",
@@ -477,6 +491,7 @@ class TestScheduledTaskRepository:
     async def test_increment_learning_count_nonexistent(self, repo):
         """Test incrementing learning count for non-existent task returns None."""
         from uuid import uuid4
+
         result = await repo.increment_learning_count(str(uuid4()))
         assert result is None
 

@@ -162,9 +162,7 @@ class TestSendMessage:
         mock_msg.message_id = 99
 
         # First call (entities) raises, second call (plain) succeeds
-        bot._app.bot.send_message = AsyncMock(
-            side_effect=[Exception("Bad Request"), mock_msg]
-        )
+        bot._app.bot.send_message = AsyncMock(side_effect=[Exception("Bad Request"), mock_msg])
 
         result = await bot.send_message(111, "hello **bold**")
 

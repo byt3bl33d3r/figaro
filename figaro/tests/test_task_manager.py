@@ -123,7 +123,9 @@ class TestTaskManager:
     async def test_fail_task(self, task_manager: TaskManager):
         """Test failing a task."""
         task = await task_manager.create_task(prompt="Test")
-        result = await task_manager.fail_task(task.task_id, error="Something went wrong")
+        result = await task_manager.fail_task(
+            task.task_id, error="Something went wrong"
+        )
 
         assert result is not None
         assert result.status == TaskStatus.FAILED
@@ -221,7 +223,9 @@ class TestTaskManager:
         assert all(t.worker_id == "worker-1" for t in results)
 
     @pytest.mark.asyncio
-    async def test_get_all_tasks_with_worker_id_and_status(self, task_manager: TaskManager):
+    async def test_get_all_tasks_with_worker_id_and_status(
+        self, task_manager: TaskManager
+    ):
         """Test filtering tasks by worker_id and status in-memory."""
         task1 = await task_manager.create_task(prompt="Task 1")
         task2 = await task_manager.create_task(prompt="Task 2")
@@ -230,6 +234,8 @@ class TestTaskManager:
         await task_manager.assign_task(task2.task_id, "worker-1")
         await task_manager.complete_task(task1.task_id, result="done")
 
-        results = await task_manager.get_all_tasks(worker_id="worker-1", status="completed")
+        results = await task_manager.get_all_tasks(
+            worker_id="worker-1", status="completed"
+        )
         assert len(results) == 1
         assert results[0].task_id == task1.task_id

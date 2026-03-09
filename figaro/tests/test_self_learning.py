@@ -199,7 +199,9 @@ class TestMaybeOptimizeScheduledTask:
         mock_repo = _prepare_db_mocks(nats_service, mock_task_model)
 
         # 3. Scheduled task with self_learning=False
-        scheduled_task = _make_scheduled_task(schedule_id="sched-1", self_learning=False)
+        scheduled_task = _make_scheduled_task(
+            schedule_id="sched-1", self_learning=False
+        )
         mock_scheduler.get_scheduled_task = AsyncMock(return_value=scheduled_task)
 
         # 4. Run
