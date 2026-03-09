@@ -8,15 +8,12 @@ import type {
   HelpRequestCreatedPayload,
   HelpRequestRespondedPayload,
   HelpRequestTimeoutPayload,
-  TaskCompletePayload,
   TaskHealingPayload,
 } from "../types";
 import { useWorkersStore } from "../stores/workers";
-import { useSupervisorsStore } from "../stores/supervisors";
 import { useMessagesStore } from "../stores/messages";
 import { useScheduledTasksStore } from "../stores/scheduledTasks";
 import { useHelpRequestsStore } from "../stores/helpRequests";
-import { useTasksStore } from "../stores/tasks";
 
 export function handleBroadcastEvent(
   eventType: string,
@@ -24,7 +21,6 @@ export function handleBroadcastEvent(
 ): void {
   const messagesStore = useMessagesStore.getState();
   const workersStore = useWorkersStore.getState();
-  const supervisorsStore = useSupervisorsStore.getState();
 
   switch (eventType) {
     case "worker_connected": {
@@ -237,41 +233,11 @@ export function handleBroadcastEvent(
     case "supervisor_task_complete":
       break;
 
-    case "task_complete": {
-      const payload = data as unknown as TaskCompletePayload & {
-        worker_id?: string;
-        supervisor_id?: string;
-      };
-      useTasksStore.getState().removeTask(payload.task_id);
-      if (payload.worker_id) {
-        workersStore.updateWorkerStatus(payload.worker_id, "idle");
-      }
-      if (payload.supervisor_id) {
-        supervisorsStore.updateSupervisorStatus(
-          payload.supervisor_id,
-          "idle"
-        );
-        messagesStore.addEvent({
-          supervisor_id: payload.supervisor_id,
-          type: "supervisor_task_complete",
-          data: payload,
-        });
-      } else {
-        messagesStore.addEvent({
-          worker_id: payload.worker_id,
-          type: "system",
-          data: {
-            message: `Task ${payload.task_id.slice(0, 8)}... completed`,
-          },
-        });
-      }
-      break;
-    }
-
     // These are handled via JetStream (handleTaskEvent), skip broadcast duplicates
     case "task_assigned":
     case "task_message":
     case "task_error":
+    case "task_complete":
     case "task_submitted_to_supervisor":
       break;
 

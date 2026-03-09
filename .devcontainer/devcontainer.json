@@ -18,10 +18,11 @@
     "customizations": {
         "vscode": {
             "extensions": [
-                "tamasfe.even-better-toml",
-                "ms-azuretools.vscode-docker",
-                "Anthropic.claude-code"
-            ]
+				"tamasfe.even-better-toml",
+				"ms-azuretools.vscode-docker",
+				"Anthropic.claude-code",
+				"github.vscode-github-actions"
+			]
         }
     },
 
@@ -34,8 +35,8 @@
     ],
 
     "mounts": [
-        "source=${localEnv:HOME}/.claude/.credentials.json,target=/home/vscode/.claude/.credentials.json,type=bind,consistency=cached",
-        "source=${localEnv:HOME}/.claude.json,target=/home/vscode/.claude.json,type=bind,consistency=cached"
+        "source=${localEnv:HOME}/.claude/.credentials.json,target=/tmp/.host-credentials.json,type=bind,consistency=cached,readonly",
+        "source=${localEnv:HOME}/.claude.json,target=/tmp/.host-claude.json,type=bind,consistency=cached,readonly"
     ],
 
 	// Features to add to the dev container. More info: https://containers.dev/features.
@@ -45,7 +46,7 @@
 	//"forwardPorts": [],
 
 	// Use 'postCreateCommand' to run commands after the container is created.
-	"postCreateCommand": "curl -fsSL https://bun.com/install | bash; npm install -g @playwright/cli@latest; sudo chown -R vscode:vscode ~/.claude && curl -fsSL https://claude.ai/install.sh | bash; curl -LsSf https://astral.sh/uv/install.sh | sh"
+	"postCreateCommand": "mkdir -p ~/.claude && cp /tmp/.host-credentials.json ~/.claude/.credentials.json && cp /tmp/.host-claude.json ~/.claude.json && curl -fsSL https://bun.com/install | bash; npm install -g @playwright/cli@latest; curl -fsSL https://claude.ai/install.sh | bash; curl -LsSf https://astral.sh/uv/install.sh | sh"
 
 	// Configure tool-specific properties.
 	// "customizations": {},

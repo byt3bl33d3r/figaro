@@ -74,8 +74,8 @@ services:
     environment:
       - WORKER_NATS_URL=nats://nats:4222
     volumes:
-      - ~/.claude.json:/home/vscode/.claude.json
-      - ~/.claude/.credentials.json:/home/vscode/.claude/.credentials.json
+      - ~/.claude.json:/home/vscode/.claude.json:ro
+      - ~/.claude/.credentials.json:/home/vscode/.claude/.credentials.json:ro
     networks:
       - figaro-net
     ipc: host
@@ -97,8 +97,8 @@ services:
     environment:
       - SUPERVISOR_NATS_URL=nats://nats:4222
     volumes:
-      - ~/.claude.json:/home/vscode/.claude.json
-      - ~/.claude/.credentials.json:/home/supervisor/.claude/.credentials.json
+      - ~/.claude.json:/home/vscode/.claude.json:ro
+      - ~/.claude/.credentials.json:/home/supervisor/.claude/.credentials.json:ro
     networks:
       - figaro-net
     deploy:

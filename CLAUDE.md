@@ -360,8 +360,7 @@ bun test                 # Tests (required)
 
 **TypeScript — UI (figaro-ui/):**
 ```bash
-npm run build            # TypeScript check + Vite build (required)
-npm run test             # Vitest (required)
+npm run test             # Type check (tsc --noEmit) + Vitest (required)
 ```
 
 **Shell scripts (*.sh):**

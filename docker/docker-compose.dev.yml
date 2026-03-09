@@ -60,8 +60,8 @@ services:
     env_file:
       - ../.env
     volumes:
-      - ~/.claude.json:/home/vscode/.claude.json
-      - ~/.claude/.credentials.json:/home/vscode/.claude/.credentials.json
+      - ~/.claude.json:/home/vscode/.claude.json:ro
+      - ~/.claude/.credentials.json:/home/vscode/.claude/.credentials.json:ro
     networks:
       - figaro-net
     ipc: host
