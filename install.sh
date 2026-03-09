@@ -312,8 +312,8 @@ prompt_value() {
     local current
     current="$(env_get "$varname")"
 
-    # Keep existing non-placeholder values
-    if [[ -n "$current" && "$current" != *-example ]]; then
+    # Keep existing non-empty values
+    if [[ -n "$current" ]]; then
         return 0
     fi
 
@@ -362,7 +362,7 @@ setup_env() {
 
         local tg_token
         tg_token="$(env_get "GATEWAY_TELEGRAM_BOT_TOKEN")"
-        if [[ -n "$tg_token" && "$tg_token" != *-example ]]; then
+        if [[ -n "$tg_token" ]]; then
             prompt_value "GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS" "  Telegram allowed chat IDs (comma-separated)"
         fi
         info ""
