@@ -58,24 +58,69 @@ function createMockClient(overrides: Record<string, any> = {}): NatsClient {
   } as unknown as NatsClient;
 }
 
+/**
+ * Creates a mock Core NATS subscription that exposes a push(msg) function
+ * to simulate incoming messages on the async iterator.
+ */
+function createMockCoreSubscription() {
+  const unsubscribe = mock(() => {});
+  let resolve: ((value: IteratorResult<any>) => void) | null = null;
+  const pending: any[] = [];
+
+  const sub = {
+    unsubscribe,
+    async *[Symbol.asyncIterator]() {
+      while (true) {
+        if (pending.length > 0) {
+          yield pending.shift();
+        } else {
+          const msg = await new Promise<any>((r) => {
+            resolve = (val) => r(val.value);
+          });
+          if (!msg) return;
+          yield msg;
+        }
+      }
+    },
+  };
+
+  function push(data: Record<string, any>) {
+    const encoded = new TextEncoder().encode(JSON.stringify(data));
+    const msg = { data: encoded };
+    if (resolve) {
+      const r = resolve;
+      resolve = null;
+      r({ value: msg, done: false });
+    } else {
+      pending.push(msg);
+    }
+  }
+
+  return { sub, push, unsubscribe };
+}
+
 describe("waitForDelegation", () => {
   test("resolves with completion when task completes", async () => {
-    let completeHandler: ((data: Record<string, any>) => void) | null = null;
+    const completeSub = createMockCoreSubscription();
+    const errorSub = createMockCoreSubscription();
+    const messageSub = createMockCoreSubscription();
+    let subIdx = 0;
 
     const client = createMockClient({
-      subscribeJetStream: mock((subject: string, handler: Function) => {
-        if (subject.endsWith(".complete")) {
-          completeHandler = handler as any;
-        }
-        return Promise.resolve({ unsubscribe: mock(() => {}) });
-      }),
+      conn: {
+        publish: mock(() => {}),
+        subscribe: mock(() => {
+          const subs = [completeSub.sub, errorSub.sub, messageSub.sub];
+          return subs[subIdx++];
+        }),
+      },
     });
 
-    const promise = waitForDelegation(client, "task-1", { task_id: "task-1" }, 5);
+    const { promise } = waitForDelegation(client, "task-1", { task_id: "task-1" }, 5);
 
     // Simulate completion
     await new Promise((r) => setTimeout(r, 10));
-    completeHandler!({ result: { summary: "Done" } });
+    completeSub.push({ result: { summary: "Done" } });
 
     const res = await promise;
     expect(res.content[0].text).toContain("completed");
@@ -83,21 +128,25 @@ describe("waitForDelegation", () => {
   });
 
   test("resolves with error when task fails", async () => {
-    let errorHandler: ((data: Record<string, any>) => void) | null = null;
+    const completeSub = createMockCoreSubscription();
+    const errorSub = createMockCoreSubscription();
+    const messageSub = createMockCoreSubscription();
+    let subIdx = 0;
 
     const client = createMockClient({
-      subscribeJetStream: mock((subject: string, handler: Function) => {
-        if (subject.endsWith(".error")) {
-          errorHandler = handler as any;
-        }
-        return Promise.resolve({ unsubscribe: mock(() => {}) });
-      }),
+      conn: {
+        publish: mock(() => {}),
+        subscribe: mock(() => {
+          const subs = [completeSub.sub, errorSub.sub, messageSub.sub];
+          return subs[subIdx++];
+        }),
+      },
     });
 
-    const promise = waitForDelegation(client, "task-2", { task_id: "task-2" }, 5);
+    const { promise } = waitForDelegation(client, "task-2", { task_id: "task-2" }, 5);
 
     await new Promise((r) => setTimeout(r, 10));
-    errorHandler!({ error: "Something broke" });
+    errorSub.push({ error: "Something broke" });
 
     const res = await promise;
     expect(res.content[0].text).toContain("failed");
@@ -107,69 +156,76 @@ describe("waitForDelegation", () => {
   test("resolves with timeout when no activity", async () => {
     const client = createMockClient();
 
-    const res = await waitForDelegation(
+    const { promise } = waitForDelegation(
       client,
       "task-3",
       { task_id: "task-3" },
       0.1, // 100ms timeout
     );
 
+    const res = await promise;
     expect(res.content[0].text).toContain("timeout");
     expect(res.content[0].text).toContain("no activity");
   });
 
   test("resets timer on activity", async () => {
-    let messageHandler: (() => void) | null = null;
-    let completeHandler: ((data: Record<string, any>) => void) | null = null;
+    const completeSub = createMockCoreSubscription();
+    const errorSub = createMockCoreSubscription();
+    const messageSub = createMockCoreSubscription();
+    let subIdx = 0;
 
     const client = createMockClient({
-      subscribeJetStream: mock((subject: string, handler: Function) => {
-        if (subject.endsWith(".message")) {
-          messageHandler = handler as any;
-        } else if (subject.endsWith(".complete")) {
-          completeHandler = handler as any;
-        }
-        return Promise.resolve({ unsubscribe: mock(() => {}) });
-      }),
+      conn: {
+        publish: mock(() => {}),
+        subscribe: mock(() => {
+          const subs = [completeSub.sub, errorSub.sub, messageSub.sub];
+          return subs[subIdx++];
+        }),
+      },
     });
 
-    const promise = waitForDelegation(client, "task-4", { task_id: "task-4" }, 0.2);
+    const { promise } = waitForDelegation(client, "task-4", { task_id: "task-4" }, 0.2);
 
     // Send activity at 100ms to reset the 200ms timer
-    setTimeout(() => messageHandler!(), 100);
+    setTimeout(() => messageSub.push({}), 100);
     // Complete at 250ms (would have timed out without the reset)
-    setTimeout(() => completeHandler!({ result: "OK" }), 250);
+    setTimeout(() => completeSub.push({ result: "OK" }), 250);
 
     const res = await promise;
     expect(res.content[0].text).toContain("completed");
   });
 
   test("unsubscribes all on completion", async () => {
-    const unsubMocks = [mock(() => {}), mock(() => {}), mock(() => {})];
+    const completeSub = createMockCoreSubscription();
+    const errorSub = createMockCoreSubscription();
+    const messageSub = createMockCoreSubscription();
     let subIdx = 0;
 
-    let completeHandler: ((data: Record<string, any>) => void) | null = null;
-
     const client = createMockClient({
-      subscribeJetStream: mock((subject: string, handler: Function) => {
-        const idx = subIdx++;
-        if (subject.endsWith(".complete")) {
-          completeHandler = handler as any;
-        }
-        return Promise.resolve({ unsubscribe: unsubMocks[idx] });
-      }),
+      conn: {
+        publish: mock(() => {}),
+        subscribe: mock(() => {
+          const subs = [completeSub.sub, errorSub.sub, messageSub.sub];
+          return subs[subIdx++];
+        }),
+      },
     });
 
-    const promise = waitForDelegation(client, "task-5", { task_id: "task-5" }, 5);
+    const { promise, subs } = waitForDelegation(client, "task-5", { task_id: "task-5" }, 5);
 
     await new Promise((r) => setTimeout(r, 10));
-    completeHandler!({ result: "Done" });
+    completeSub.push({ result: "Done" });
 
     await promise;
 
-    for (const unsub of unsubMocks) {
-      expect(unsub).toHaveBeenCalled();
+    // Verify subs were returned (caller is responsible for cleanup)
+    expect(subs.length).toBe(3);
+    for (const sub of subs) {
+      sub.unsubscribe();
     }
+    expect(completeSub.unsubscribe).toHaveBeenCalled();
+    expect(errorSub.unsubscribe).toHaveBeenCalled();
+    expect(messageSub.unsubscribe).toHaveBeenCalled();
   });
 });
 
@@ -393,5 +449,259 @@ describe("createSupervisorToolsServer", () => {
     const res = await sendScreenshotTool.handler({ worker_id: "w1" });
     expect(res.content[0].text).toContain("sent to telegram");
     expect(publishMock).toHaveBeenCalled();
+  });
+});
+
+/**
+ * Regression tests for delegate_to_worker blocking behavior.
+ *
+ * Previously, delegate_to_worker used JetStream ephemeral push consumers
+ * (js.subscribe()) which could fail silently in nats.js v2, causing the
+ * tool to return immediately instead of blocking until the worker finished.
+ * The fix switched to Core NATS subscriptions (nc.subscribe()), which
+ * JetStream publishes also deliver to. These tests verify the tool
+ * actually blocks and waits for the worker result.
+ */
+describe("delegate_to_worker regression: blocks until worker completes", () => {
+  test("blocks until worker publishes completion, not returning immediately", async () => {
+    const completeSub = createMockCoreSubscription();
+    const errorSub = createMockCoreSubscription();
+    const messageSub = createMockCoreSubscription();
+    let subIdx = 0;
+
+    const client = createMockClient({
+      request: mock(() =>
+        Promise.resolve({
+          task_id: "delegated-1",
+          worker_id: "w1",
+          queued: false,
+          message: "Task delegated.",
+        }),
+      ),
+      conn: {
+        publish: mock(() => {}),
+        subscribe: mock(() => {
+          const subs = [completeSub.sub, errorSub.sub, messageSub.sub];
+          return subs[subIdx++];
+        }),
+      },
+    });
+
+    const { server } = getServer(client);
+    const delegateTool = server.tools.find(
+      (t: any) => t.name === "delegate_to_worker",
+    );
+
+    // Start the delegation — it should NOT resolve immediately
+    let resolved = false;
+    const resultPromise = delegateTool
+      .handler({ prompt: "Do something", worker_id: "w1" })
+      .then((res: any) => {
+        resolved = true;
+        return res;
+      });
+
+    // Wait a tick — the tool must still be blocking
+    await new Promise((r) => setTimeout(r, 50));
+    expect(resolved).toBe(false);
+
+    // Simulate worker completing after 100ms
+    completeSub.push({ result: "Task done successfully" });
+
+    const res = await resultPromise;
+    expect(resolved).toBe(true);
+    expect(res.content[0].text).toContain("completed");
+    expect(res.content[0].text).toContain("Task done successfully");
+  });
+
+  test("blocks and returns error when worker fails", async () => {
+    const completeSub = createMockCoreSubscription();
+    const errorSub = createMockCoreSubscription();
+    const messageSub = createMockCoreSubscription();
+    let subIdx = 0;
+
+    const client = createMockClient({
+      request: mock(() =>
+        Promise.resolve({
+          task_id: "delegated-2",
+          worker_id: "w1",
+          queued: false,
+          message: "Task delegated.",
+        }),
+      ),
+      conn: {
+        publish: mock(() => {}),
+        subscribe: mock(() => {
+          const subs = [completeSub.sub, errorSub.sub, messageSub.sub];
+          return subs[subIdx++];
+        }),
+      },
+    });
+
+    const { server } = getServer(client);
+    const delegateTool = server.tools.find(
+      (t: any) => t.name === "delegate_to_worker",
+    );
+
+    let resolved = false;
+    const resultPromise = delegateTool
+      .handler({ prompt: "Do something", worker_id: "w1" })
+      .then((res: any) => {
+        resolved = true;
+        return res;
+      });
+
+    await new Promise((r) => setTimeout(r, 50));
+    expect(resolved).toBe(false);
+
+    errorSub.push({ error: "Browser crashed" });
+
+    const res = await resultPromise;
+    expect(resolved).toBe(true);
+    expect(res.content[0].text).toContain("failed");
+    expect(res.content[0].text).toContain("Browser crashed");
+  });
+
+  test("returns immediately when orchestrator returns queued", async () => {
+    const client = createMockClient({
+      request: mock(() =>
+        Promise.resolve({
+          task_id: "delegated-3",
+          worker_id: null,
+          queued: true,
+          message: "No workers available. Task queued.",
+        }),
+      ),
+    });
+
+    const { server } = getServer(client);
+    const delegateTool = server.tools.find(
+      (t: any) => t.name === "delegate_to_worker",
+    );
+
+    const res = await delegateTool.handler({ prompt: "Do something" });
+    expect(res.content[0].text).toContain("queued");
+    expect(res.content[0].text).toContain("No workers available");
+  });
+
+  test("returns immediately when orchestrator returns error", async () => {
+    const client = createMockClient({
+      request: mock(() =>
+        Promise.resolve({
+          error: "Worker w1 is busy",
+          task_id: "delegated-4",
+          queued: true,
+        }),
+      ),
+    });
+
+    const { server } = getServer(client);
+    const delegateTool = server.tools.find(
+      (t: any) => t.name === "delegate_to_worker",
+    );
+
+    const res = await delegateTool.handler({
+      prompt: "Do something",
+      worker_id: "w1",
+    });
+    expect(res.content[0].text).toContain("Worker w1 is busy");
+  });
+
+  test("stays blocked while worker sends activity messages", async () => {
+    const completeSub = createMockCoreSubscription();
+    const errorSub = createMockCoreSubscription();
+    const messageSub = createMockCoreSubscription();
+    let subIdx = 0;
+
+    const client = createMockClient({
+      request: mock(() =>
+        Promise.resolve({
+          task_id: "delegated-5",
+          worker_id: "w1",
+          queued: false,
+          message: "Task delegated.",
+        }),
+      ),
+      conn: {
+        publish: mock(() => {}),
+        subscribe: mock(() => {
+          const subs = [completeSub.sub, errorSub.sub, messageSub.sub];
+          return subs[subIdx++];
+        }),
+      },
+    });
+
+    const { server } = getServer(client);
+    const delegateTool = server.tools.find(
+      (t: any) => t.name === "delegate_to_worker",
+    );
+
+    let resolved = false;
+    const resultPromise = delegateTool
+      .handler({ prompt: "Do something", worker_id: "w1" })
+      .then((res: any) => {
+        resolved = true;
+        return res;
+      });
+
+    // Simulate worker sending multiple activity messages
+    for (let i = 0; i < 5; i++) {
+      await new Promise((r) => setTimeout(r, 20));
+      messageSub.push({ type: "assistant", message: `Working step ${i}...` });
+      expect(resolved).toBe(false);
+    }
+
+    // Finally complete
+    completeSub.push({ result: "All steps done" });
+
+    const res = await resultPromise;
+    expect(resolved).toBe(true);
+    expect(res.content[0].text).toContain("completed");
+    expect(res.content[0].text).toContain("All steps done");
+  });
+
+  test("cleans up subscriptions after completion", async () => {
+    const completeSub = createMockCoreSubscription();
+    const errorSub = createMockCoreSubscription();
+    const messageSub = createMockCoreSubscription();
+    let subIdx = 0;
+
+    const client = createMockClient({
+      request: mock(() =>
+        Promise.resolve({
+          task_id: "delegated-6",
+          worker_id: "w1",
+          queued: false,
+          message: "Task delegated.",
+        }),
+      ),
+      conn: {
+        publish: mock(() => {}),
+        subscribe: mock(() => {
+          const subs = [completeSub.sub, errorSub.sub, messageSub.sub];
+          return subs[subIdx++];
+        }),
+      },
+    });
+
+    const { server } = getServer(client);
+    const delegateTool = server.tools.find(
+      (t: any) => t.name === "delegate_to_worker",
+    );
+
+    const resultPromise = delegateTool.handler({
+      prompt: "Do something",
+      worker_id: "w1",
+    });
+
+    await new Promise((r) => setTimeout(r, 10));
+    completeSub.push({ result: "Done" });
+
+    await resultPromise;
+
+    // Verify all three Core NATS subscriptions were cleaned up
+    expect(completeSub.unsubscribe).toHaveBeenCalled();
+    expect(errorSub.unsubscribe).toHaveBeenCalled();
+    expect(messageSub.unsubscribe).toHaveBeenCalled();
   });
 });

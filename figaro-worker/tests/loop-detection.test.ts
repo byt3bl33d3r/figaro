@@ -248,63 +248,66 @@ describe("Hook factories", () => {
     expect(result).toEqual({});
   });
 
-  test("createPreToolUseHook returns { systemMessage } at warning threshold", () => {
+  test("createPreToolUseHook returns { systemMessage } at warning threshold", async () => {
     const config = makeConfig({ warningThreshold: 3, criticalThreshold: 5 });
     const session = new LoopDetectionSession(config);
     const hook = createPreToolUseHook(session, config);
+    const signal = new AbortController().signal;
     const input = { tool_name: "toolA", tool_input: { a: 1 }, tool_use_id: "id-1" };
-    hook(input); // call 1
-    hook({ ...input, tool_use_id: "id-2" }); // call 2
-    const result = hook({ ...input, tool_use_id: "id-3" }); // call 3 = warning
+    await hook(input, undefined, { signal }); // call 1
+    await hook({ ...input, tool_use_id: "id-2" }, undefined, { signal }); // call 2
+    const result = await hook({ ...input, tool_use_id: "id-3" }, undefined, { signal }); // call 3 = warning
     expect(result).toHaveProperty("systemMessage");
     expect(result).not.toHaveProperty("decision");
   });
 
-  test("createPreToolUseHook returns { decision: 'block' } at critical threshold", () => {
+  test("createPreToolUseHook returns { decision: 'block' } at critical threshold", async () => {
     const config = makeConfig({ warningThreshold: 3, criticalThreshold: 5 });
     const session = new LoopDetectionSession(config);
     const hook = createPreToolUseHook(session, config);
+    const signal = new AbortController().signal;
     const input = { tool_name: "toolA", tool_input: { a: 1 }, tool_use_id: "id-1" };
     for (let i = 0; i < 4; i++) {
-      hook({ ...input, tool_use_id: `id-${i}` });
+      await hook({ ...input, tool_use_id: `id-${i}` }, undefined, { signal });
     }
-    const result = hook({ ...input, tool_use_id: "id-4" }); // call 5 = critical
+    const result = await hook({ ...input, tool_use_id: "id-4" }, undefined, { signal }); // call 5 = critical
     expect(result).toHaveProperty("decision", "block");
   });
 
-  test("createPreToolUseHook warning dedup: second warning returns {}", () => {
+  test("createPreToolUseHook warning dedup: second warning returns {}", async () => {
     const config = makeConfig({ warningThreshold: 3, criticalThreshold: 10 });
     const session = new LoopDetectionSession(config);
     const hook = createPreToolUseHook(session, config);
+    const signal = new AbortController().signal;
     const input = { tool_name: "toolA", tool_input: { a: 1 } };
-    hook({ ...input, tool_use_id: "id-1" });
-    hook({ ...input, tool_use_id: "id-2" });
-    const first = hook({ ...input, tool_use_id: "id-3" }); // warning
+    await hook({ ...input, tool_use_id: "id-1" }, undefined, { signal });
+    await hook({ ...input, tool_use_id: "id-2" }, undefined, { signal });
+    const first = await hook({ ...input, tool_use_id: "id-3" }, undefined, { signal }); // warning
     expect(first).toHaveProperty("systemMessage");
-    const second = hook({ ...input, tool_use_id: "id-4" }); // deduped
+    const second = await hook({ ...input, tool_use_id: "id-4" }, undefined, { signal }); // deduped
     expect(second).toEqual({});
   });
 
-  test("createPostToolUseHook records result and returns {}", () => {
+  test("createPostToolUseHook records result and returns {}", async () => {
     const config = makeConfig();
     const session = new LoopDetectionSession(config);
     session.recordCall("toolA", { a: 1 }, "id-1");
     const hook = createPostToolUseHook(session);
-    const result = hook({ tool_use_id: "id-1", tool_response: { out: "ok" } });
+    const signal = new AbortController().signal;
+    const result = await hook({ tool_use_id: "id-1", tool_response: { out: "ok" } }, undefined, { signal });
     expect(result).toEqual({});
     expect(session.history[0].resultHash).toBeDefined();
   });
 
-  test("buildLoopDetectionHooks returns preToolUse and postToolUse arrays", () => {
+  test("buildLoopDetectionHooks returns PreToolUse and PostToolUse arrays", () => {
     const config = makeConfig();
     const session = new LoopDetectionSession(config);
     const hooks = buildLoopDetectionHooks(session, config);
-    expect(Array.isArray(hooks.preToolUse)).toBe(true);
-    expect(Array.isArray(hooks.postToolUse)).toBe(true);
-    expect(hooks.preToolUse.length).toBe(1);
-    expect(hooks.postToolUse.length).toBe(1);
-    expect(typeof hooks.preToolUse[0].matcher).toBe("function");
-    expect(typeof hooks.preToolUse[0].callback).toBe("function");
-    expect(hooks.preToolUse[0].matcher()).toBe(true);
+    expect(Array.isArray(hooks.PreToolUse)).toBe(true);
+    expect(Array.isArray(hooks.PostToolUse)).toBe(true);
+    expect(hooks.PreToolUse.length).toBe(1);
+    expect(hooks.PostToolUse.length).toBe(1);
+    expect(Array.isArray(hooks.PreToolUse[0].hooks)).toBe(true);
+    expect(typeof hooks.PreToolUse[0].hooks[0]).toBe("function");
   });
 });

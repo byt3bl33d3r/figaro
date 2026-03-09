@@ -9,4 +9,4 @@ RUN apk add --no-cache openssh-server busybox-extras && \
 
 EXPOSE 22 23
 
-CMD /usr/sbin/sshd && telnetd -F -l /bin/login
+CMD ["/bin/sh", "-c", "/usr/sbin/sshd && telnetd -F -l /bin/login"]

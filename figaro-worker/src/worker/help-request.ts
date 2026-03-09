@@ -45,7 +45,7 @@ export class HelpRequestHandler {
     const subject = Subjects.helpResponse(requestId);
 
     let settled = false;
-    let settle: (value: HelpResponsePayload | null) => void;
+    let settle!: (value: HelpResponsePayload | null) => void;
     const responsePromise = new Promise<HelpResponsePayload | null>((res) => {
       settle = res;
     });

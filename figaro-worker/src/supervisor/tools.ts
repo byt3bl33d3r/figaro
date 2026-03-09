@@ -5,7 +5,7 @@
  */
 
 import { tool, createSdkMcpServer } from "@anthropic-ai/claude-agent-sdk";
-import { JSONCodec } from "nats";
+import { JSONCodec, type Subscription } from "nats";
 import { z } from "zod/v4";
 import type { NatsClient } from "../nats/client";
 import { Subjects } from "../nats/subjects";
@@ -34,13 +34,24 @@ function error(msg: string): {
   return { content: [{ type: "text", text: `Error: ${msg}` }] };
 }
 
-export async function waitForDelegation(
+/**
+ * Wait for a delegated task to complete using Core NATS subscriptions.
+ *
+ * Uses Core NATS (not JetStream consumers) for reliability — JetStream
+ * publishes also deliver to Core NATS subscribers on the same subject.
+ * Subscriptions should be set up BEFORE the delegation request is sent
+ * to prevent race conditions (see delegateToWorker).
+ */
+export function waitForDelegation(
   client: NatsClient,
   taskId: string,
   apiResult: JsonData,
   inactivityTimeout: number = DELEGATION_INACTIVITY_TIMEOUT,
-): Promise<JsonData> {
-  const subs: Array<{ unsubscribe: () => void }> = [];
+): {
+  promise: Promise<JsonData>;
+  subs: Subscription[];
+} {
+  const subs: Subscription[] = [];
   let timer: ReturnType<typeof setTimeout>;
   let settled = false;
 
@@ -55,13 +66,9 @@ export async function waitForDelegation(
     }
   }
 
-  // Create a promise that resolves when the task completes, fails, or times out.
-  // The resolve/reject handles are captured so JetStream callbacks can settle it.
-  let settle: (value: JsonData) => void;
-  let reject: (err: Error) => void;
-  const promise = new Promise<JsonData>((res, rej) => {
+  let settle!: (value: JsonData) => void;
+  const promise = new Promise<JsonData>((res) => {
     settle = res;
-    reject = rej;
   });
 
   function resetTimer(): void {
@@ -85,11 +92,16 @@ export async function waitForDelegation(
 
   resetTimer();
 
-  try {
-    // Subscribe to task completion
-    const subComplete = await client.subscribeJetStream(
-      Subjects.taskComplete(taskId),
-      (data: JsonData) => {
+  // Subscribe via Core NATS. JetStream publishes also deliver to Core NATS
+  // subscribers, so no JetStream consumer needed (same pattern as help-request).
+  const nc = client.conn;
+
+  const subComplete = nc.subscribe(Subjects.taskComplete(taskId));
+  subs.push(subComplete);
+  (async () => {
+    for await (const msg of subComplete) {
+      try {
+        const data = codec.decode(msg.data);
         if (settled) return;
         settled = true;
         cleanup();
@@ -100,14 +112,21 @@ export async function waitForDelegation(
             worker_result: data.result,
           }),
         );
-      },
-    );
-    subs.push(subComplete);
+      } catch (err) {
+        console.error(
+          `[supervisor-tools] Error processing completion for task ${taskId}:`,
+          err,
+        );
+      }
+    }
+  })();
 
-    // Subscribe to task error
-    const subError = await client.subscribeJetStream(
-      Subjects.taskError(taskId),
-      (data: JsonData) => {
+  const subError = nc.subscribe(Subjects.taskError(taskId));
+  subs.push(subError);
+  (async () => {
+    for await (const msg of subError) {
+      try {
+        const data = codec.decode(msg.data);
         if (settled) return;
         settled = true;
         cleanup();
@@ -118,24 +137,28 @@ export async function waitForDelegation(
             error: data.error ?? "Unknown error",
           }),
         );
-      },
-    );
-    subs.push(subError);
+      } catch (err) {
+        console.error(
+          `[supervisor-tools] Error processing error for task ${taskId}:`,
+          err,
+        );
+      }
+    }
+  })();
 
-    // Subscribe to task messages (activity indicator)
-    const subMessage = await client.subscribeJetStream(
-      Subjects.taskMessage(taskId),
-      () => {
+  const subMessage = nc.subscribe(Subjects.taskMessage(taskId));
+  subs.push(subMessage);
+  (async () => {
+    for await (const msg of subMessage) {
+      try {
         resetTimer();
-      },
-    );
-    subs.push(subMessage);
-  } catch (e) {
-    cleanup();
-    throw e;
-  }
+      } catch {
+        // ignore
+      }
+    }
+  })();
 
-  return promise;
+  return { promise, subs };
 }
 
 export function createSupervisorToolsServer(
@@ -183,6 +206,7 @@ export function createSupervisorToolsServer(
         .describe("Specific worker ID, or omit for auto-assignment"),
     },
     async (args) => {
+      // First, send the delegation request to get a task_id
       const resp = await natsRequest(
         Subjects.API_DELEGATE,
         {
@@ -206,7 +230,26 @@ export function createSupervisorToolsServer(
         `[supervisor-tools] Delegated task ${delegatedTaskId}, waiting for completion...`,
       );
 
-      return await waitForDelegation(client, delegatedTaskId, resp);
+      // Set up Core NATS subscriptions and wait for the worker to finish.
+      // Uses Core NATS instead of JetStream consumers for reliability —
+      // JetStream publishes also deliver to Core NATS subscribers.
+      const { promise, subs } = waitForDelegation(
+        client,
+        delegatedTaskId,
+        resp,
+      );
+
+      try {
+        return await promise;
+      } finally {
+        for (const sub of subs) {
+          try {
+            sub.unsubscribe();
+          } catch {
+            // ignore
+          }
+        }
+      }
     },
   );
 
@@ -366,14 +409,15 @@ export function createSupervisorToolsServer(
     },
     async (args) => {
       const data: JsonData = { schedule_id: args.id };
-      for (const key of [
+      const optionalKeys = [
         "name",
         "prompt",
         "start_url",
         "interval_seconds",
         "run_at",
         "enabled",
-      ]) {
+      ] as const;
+      for (const key of optionalKeys) {
         if (args[key] !== undefined) {
           data[key] = args[key];
         }

@@ -242,11 +242,16 @@ export class LoopDetectionSession {
   }
 }
 
+type HookInput = Record<string, unknown>;
+type HookJSONOutput = Record<string, unknown>;
+type HookCallback = (input: HookInput, toolUseId: string | undefined, options: { signal: AbortSignal }) => Promise<HookJSONOutput>;
+type HookCallbackMatcher = { matcher?: string; hooks: HookCallback[] };
+
 export function createPreToolUseHook(
   session: LoopDetectionSession,
   config: LoopDetectionConfig
-): (input: Record<string, unknown>) => Record<string, unknown> {
-  return (input: Record<string, unknown>): Record<string, unknown> => {
+): HookCallback {
+  return async (input: HookInput): Promise<HookJSONOutput> => {
     if (!config.enabled) {
       return {};
     }
@@ -272,8 +277,8 @@ export function createPreToolUseHook(
 
 export function createPostToolUseHook(
   session: LoopDetectionSession
-): (input: Record<string, unknown>) => Record<string, unknown> {
-  return (input: Record<string, unknown>): Record<string, unknown> => {
+): HookCallback {
+  return async (input: HookInput): Promise<HookJSONOutput> => {
     const toolUseId = input.tool_use_id as string | undefined;
     const toolResponse = input.tool_response;
 
@@ -289,26 +294,18 @@ export function buildLoopDetectionHooks(
   session: LoopDetectionSession,
   config: LoopDetectionConfig
 ): {
-  preToolUse: Array<{
-    matcher: () => boolean;
-    callback: (input: Record<string, unknown>) => Record<string, unknown>;
-  }>;
-  postToolUse: Array<{
-    matcher: () => boolean;
-    callback: (input: Record<string, unknown>) => Record<string, unknown>;
-  }>;
+  PreToolUse: HookCallbackMatcher[];
+  PostToolUse: HookCallbackMatcher[];
 } {
   return {
-    preToolUse: [
+    PreToolUse: [
       {
-        matcher: () => true,
-        callback: createPreToolUseHook(session, config),
+        hooks: [createPreToolUseHook(session, config)],
       },
     ],
-    postToolUse: [
+    PostToolUse: [
       {
-        matcher: () => true,
-        callback: createPostToolUseHook(session),
+        hooks: [createPostToolUseHook(session)],
       },
     ],
   };

@@ -18,6 +18,7 @@ Key principles:
 - **JetStream provides durable delivery.** Task events (messages, completion, errors) go through JetStream so they survive reconnections. Core NATS is only for ephemeral operations (registration, heartbeats, API calls).
 - **Supervisor delegation is blocking but progress-aware.** `waitForDelegation()` in `supervisor/tools.ts` subscribes to `figaro.task.{id}.message` and resets its inactivity timer on every worker message. The `DELEGATION_INACTIVITY_TIMEOUT` (600s) is a silence detector, not a task duration limit.
 - **Help requests have their own timeouts.** Human-in-the-loop requests wait independently (default 300s) and don't affect the task execution timeout.
+- **Use Core NATS subscriptions for waiting on task events in the worker/supervisor.** JetStream ephemeral push consumers (`js.subscribe()` in nats.js v2) are unreliable — they can fail silently or throw during setup, causing tools like `delegate_to_worker` to return immediately instead of blocking. Since JetStream publishes also deliver to Core NATS subscribers on the same subject, use `nc.subscribe()` instead (same pattern as `HelpRequestHandler`). Both are ephemeral and behave identically for `DeliverPolicy.New` use cases.
 
 When adding new features or modifying existing ones, always ask: "What happens if this task runs for 2 hours?" If the answer involves a timeout killing it while it's still making progress, the design is wrong.
 
@@ -307,6 +308,7 @@ uv run pytest            # Tests (required)
 
 **TypeScript — Worker (figaro-worker/):**
 ```bash
+bunx tsc --noEmit        # Type check (required)
 bun test                 # Tests (required)
 ```
 
