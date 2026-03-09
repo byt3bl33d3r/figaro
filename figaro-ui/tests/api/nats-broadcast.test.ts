@@ -1,13 +1,9 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { natsManager } from "../../src/api/nats";
+import { handleBroadcastEvent } from "../../src/api/nats-broadcast-handler";
 import { useMessagesStore } from "../../src/stores/messages";
 import { useWorkersStore } from "../../src/stores/workers";
 import { useTasksStore } from "../../src/stores/tasks";
 import { useSupervisorsStore } from "../../src/stores/supervisors";
-
-// Access the private method for testing
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const manager = natsManager as any;
 
 describe("handleBroadcastEvent", () => {
   beforeEach(() => {
@@ -46,7 +42,7 @@ describe("handleBroadcastEvent", () => {
       it(`should ignore "${type}" without logging or updating stores`, () => {
         const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-        manager.handleBroadcastEvent(type, data);
+        handleBroadcastEvent(type, data);
 
         expect(consoleSpy).not.toHaveBeenCalled();
         expect(useMessagesStore.getState().events).toHaveLength(0);
@@ -58,7 +54,7 @@ describe("handleBroadcastEvent", () => {
   it('should log unknown broadcast events', () => {
     const consoleSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 
-    manager.handleBroadcastEvent("some_unknown_event", { foo: "bar" });
+    handleBroadcastEvent("some_unknown_event", { foo: "bar" });
 
     expect(consoleSpy).toHaveBeenCalledWith(
       "Unknown broadcast event:",

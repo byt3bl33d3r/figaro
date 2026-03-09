@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from figaro.db.models import ScheduledTaskModel
 from figaro.db.repositories.scheduled import ScheduledTaskRepository
 from figaro.models.scheduled_task import ScheduledTask
+from figaro_nats import Subjects
 from figaro.services.registry import Registry
 from figaro.services.task_manager import TaskManager
 
@@ -170,7 +171,7 @@ class SchedulerService:
         # Broadcast execution summary to UI via NATS
         if self._nats_service:
             await self._nats_service.conn.publish(
-                "figaro.broadcast.scheduled_task_executed",
+                Subjects.BROADCAST_SCHEDULED_TASK_EXECUTED,
                 {
                     "schedule_id": scheduled_task.schedule_id,
                     "task_ids": task_ids,
@@ -209,7 +210,7 @@ class SchedulerService:
                         )
                         if self._nats_service:
                             await self._nats_service.conn.publish(
-                                "figaro.broadcast.scheduled_task_auto_paused",
+                                Subjects.BROADCAST_SCHEDULED_TASK_AUTO_PAUSED,
                                 {
                                     "schedule_id": scheduled_task.schedule_id,
                                     "run_count": updated.run_count,

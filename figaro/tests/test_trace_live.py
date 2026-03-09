@@ -29,14 +29,23 @@ NATS_URL = "nats://nats:4222"
 JAEGER_URL = "http://jaeger:16686"
 JAEGER_OTLP_URL = "http://jaeger:4318"
 
-# Set up a TracerProvider that exports to Jaeger so the test can emit a
-# ``ui.task_submission`` root span, mirroring what the real UI does.
+# Set up TracerProviders that export to Jaeger so tests can emit root spans
+# mirroring what the real services do.
 # SimpleSpanProcessor ensures spans are flushed immediately (no batching delay).
-_provider = TracerProvider(resource=Resource.create({"service.name": "figaro-ui"}))
-_provider.add_span_processor(
-    SimpleSpanProcessor(OTLPSpanExporter(endpoint=f"{JAEGER_OTLP_URL}/v1/traces"))
+_otlp_endpoint = f"{JAEGER_OTLP_URL}/v1/traces"
+
+_ui_provider = TracerProvider(resource=Resource.create({"service.name": "figaro-ui"}))
+_ui_provider.add_span_processor(
+    SimpleSpanProcessor(OTLPSpanExporter(endpoint=_otlp_endpoint))
 )
-trace.set_tracer_provider(_provider)
+trace.set_tracer_provider(_ui_provider)
+
+_gateway_provider = TracerProvider(
+    resource=Resource.create({"service.name": "figaro-gateway"})
+)
+_gateway_provider.add_span_processor(
+    SimpleSpanProcessor(OTLPSpanExporter(endpoint=_otlp_endpoint))
+)
 
 EXPECTED_TASK_SUBMISSION_CHAIN = [
     SpanEntry("ui.task_submission", 0),
@@ -243,6 +252,110 @@ async def test_supervisor_delegation_span_chain(record_mode, span_chain_snapshot
                 chain_names = [e.name for e in chain]
                 assert "orchestrator.api_create_task" in chain_names
                 assert "orchestrator.publish_task_assignment" in chain_names
+    finally:
+        await nc.close()
+
+
+@pytest.mark.live
+async def test_gateway_task_span_chain(record_mode, span_chain_snapshot):
+    """Simulate a gateway-originated task (like Telegram), verify full trace chain.
+
+    Publishes directly to figaro.gateway.telegram.task (mimicking what the
+    gateway does), waits for the task to complete and for the result to be
+    sent back via figaro.gateway.telegram.send, then asserts the span chain.
+    """
+    nc = await _connect_nats()
+    try:
+        task_id = str(uuid.uuid4())
+        prompt = (
+            "Create a scheduled task that runs tomorrow only, at 3pm "
+            "and looks up Will Smith's birthday on Google."
+        )
+        chat_id = "test-chat-123"
+        channel = "telegram"
+
+        # Subscribe to completion + gateway send-back before publishing
+        complete_task = asyncio.create_task(
+            _wait_for_task_complete(nc, task_id, timeout=180.0)
+        )
+        gateway_send_future: asyncio.Future[dict] = (
+            asyncio.get_running_loop().create_future()
+        )
+        send_sub = await nc.subscribe(f"figaro.gateway.{channel}.send")
+
+        async def _send_listener() -> None:
+            async for msg in send_sub.messages:
+                data = json.loads(msg.data)
+                if data.get("chat_id") == chat_id and not gateway_send_future.done():
+                    gateway_send_future.set_result(data)
+                break
+
+        send_listener_task = asyncio.create_task(_send_listener())
+
+        # Create root span mimicking the gateway's handle_channel_message
+        gateway_tracer = _gateway_provider.get_tracer("figaro")
+        with gateway_tracer.start_as_current_span(
+            "gateway.handle_channel_message",
+            attributes={"gateway.channel": channel, "gateway.chat_id": chat_id},
+        ) as span:
+            trace_id = format(span.get_span_context().trace_id, "032x")
+
+            carrier: dict[str, str] = {}
+            propagate.inject(carrier)
+
+            payload = {
+                "channel": channel,
+                "chat_id": chat_id,
+                "text": prompt,
+                "task_id": task_id,
+            }
+            await nc.publish(
+                f"figaro.gateway.{channel}.task",
+                json.dumps(payload).encode(),
+                headers=carrier,
+            )
+
+        # Wait for task completion
+        await complete_task
+
+        # Wait for the gateway send-back (orchestrator sends result to channel)
+        try:
+            await asyncio.wait_for(gateway_send_future, timeout=10.0)
+        except asyncio.TimeoutError:
+            pass  # send-back is best-effort; trace is still valid without it
+        finally:
+            await send_sub.unsubscribe()
+            send_listener_task.cancel()
+
+        # Query Jaeger for the trace
+        spans = await get_trace_spans(
+            trace_id,
+            jaeger_url=JAEGER_URL,
+            timeout=30.0,
+        )
+
+        chain = get_span_chain(spans)
+
+        if span_chain_snapshot.is_recording:
+            span_chain_snapshot.save(_chain_to_dicts(chain))
+            pytest.skip("Recorded snapshot")
+        else:
+            saved = span_chain_snapshot.load()
+            if saved is not None:
+                expected = _dicts_to_chain(saved)
+                assert_span_chain(spans, expected)
+            else:
+                # Basic structural assertions when no snapshot exists
+                chain_names = [e.name for e in chain]
+                assert "gateway.handle_channel_message" in chain_names
+                assert "task_manager.create_task" in chain_names
+                assert any(
+                    name in chain_names
+                    for name in [
+                        "orchestrator.handle_task_complete",
+                        "orchestrator.handle_task_error",
+                    ]
+                )
     finally:
         await nc.close()
 

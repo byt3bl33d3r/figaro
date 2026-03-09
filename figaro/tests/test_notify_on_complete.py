@@ -121,7 +121,7 @@ class TestMaybeNotifyGateway:
         nats_service.publish_gateway_send = AsyncMock()
 
         with patch(
-            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
+            "figaro.services.nats.background.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_notify_gateway(
                 "task-1", result={"result": "Report generated successfully"}
@@ -150,7 +150,7 @@ class TestMaybeNotifyGateway:
         nats_service.publish_gateway_send = AsyncMock()
 
         with patch(
-            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
+            "figaro.services.nats.background.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_notify_gateway(
                 "task-1", error="Element not found"
@@ -180,7 +180,7 @@ class TestMaybeNotifyGateway:
         nats_service.publish_gateway_send = AsyncMock()
 
         with patch(
-            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
+            "figaro.services.nats.background.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_notify_gateway("task-1", result="done")
 
@@ -196,7 +196,7 @@ class TestMaybeNotifyGateway:
         nats_service.publish_gateway_send = AsyncMock()
 
         with patch(
-            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
+            "figaro.services.nats.background.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_notify_gateway("task-1", result="done")
 
@@ -217,7 +217,7 @@ class TestMaybeNotifyGateway:
         nats_service.publish_gateway_send = AsyncMock()
 
         with patch(
-            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
+            "figaro.services.nats.background.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_notify_gateway("task-1", result="done")
 
@@ -237,7 +237,7 @@ class TestMaybeNotifyGateway:
         nats_service.publish_gateway_send = AsyncMock()
 
         with patch(
-            "figaro.services.nats_service.TaskRepository", return_value=mock_repo
+            "figaro.services.nats.background.TaskRepository", return_value=mock_repo
         ):
             await nats_service._maybe_notify_gateway("task-1", result="done")
 

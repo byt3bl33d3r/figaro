@@ -1,7 +1,7 @@
 """Tests for the stop task API handler in NatsService."""
 
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from figaro.models import ClientType
 from figaro.models.messages import WorkerStatus

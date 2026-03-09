@@ -1,0 +1,57 @@
+"""Key name normalization for asyncvnc."""
+
+# Map common key name variants to asyncvnc key_codes names
+_KEY_ALIASES: dict[str, str] = {
+    "ctrl": "Ctrl",
+    "control": "Ctrl",
+    "control_l": "Ctrl",
+    "control_r": "Control_R",
+    "shift": "Shift",
+    "shift_l": "Shift",
+    "shift_r": "Shift_R",
+    "alt": "Alt",
+    "alt_l": "Alt",
+    "alt_r": "Alt_R",
+    "super": "Super",
+    "super_l": "Super",
+    "super_r": "Super_R",
+    "cmd": "Cmd",
+    "meta": "Super",
+    "esc": "Esc",
+    "escape": "Esc",
+    "del": "Del",
+    "delete": "Del",
+    "backspace": "Backspace",
+    "enter": "Return",
+    "return": "Return",
+    "tab": "Tab",
+    "space": "space",
+    "up": "Up",
+    "down": "Down",
+    "left": "Left",
+    "right": "Right",
+    "home": "Home",
+    "end": "End",
+    "pageup": "Page_Up",
+    "page_up": "Page_Up",
+    "pagedown": "Page_Down",
+    "page_down": "Page_Down",
+    "insert": "Insert",
+    "f1": "F1",
+    "f2": "F2",
+    "f3": "F3",
+    "f4": "F4",
+    "f5": "F5",
+    "f6": "F6",
+    "f7": "F7",
+    "f8": "F8",
+    "f9": "F9",
+    "f10": "F10",
+    "f11": "F11",
+    "f12": "F12",
+}
+
+
+def _normalize_key(key: str) -> str:
+    """Normalize a key name to one asyncvnc recognizes."""
+    return _KEY_ALIASES.get(key.lower(), key)

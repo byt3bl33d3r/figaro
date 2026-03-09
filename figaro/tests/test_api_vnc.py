@@ -147,7 +147,7 @@ class TestApiVncScreenshot:
         nats_service._vnc_pool.connection = _mock_pool_connection(mock_client)
 
         with patch(
-            "figaro.services.nats_service.screenshot_with_client",
+            "figaro.services.nats.api_remote.screenshot_with_client",
             new_callable=AsyncMock,
             return_value=("base64data", "image/jpeg", 1920, 1080, 1280, 720),
         ) as mock_screenshot:
@@ -180,7 +180,7 @@ class TestApiVncType:
         nats_service._vnc_pool.connection = _mock_pool_connection(mock_client)
 
         with patch(
-            "figaro.services.nats_service.type_with_client",
+            "figaro.services.nats.api_remote.type_with_client",
             new_callable=AsyncMock,
         ) as mock_type:
             result = await nats_service._api_vnc(
@@ -200,7 +200,7 @@ class TestApiVncKey:
         nats_service._vnc_pool.connection = _mock_pool_connection(mock_client)
 
         with patch(
-            "figaro.services.nats_service.key_with_client",
+            "figaro.services.nats.api_remote.key_with_client",
             new_callable=AsyncMock,
         ) as mock_key:
             result = await nats_service._api_vnc(
@@ -222,7 +222,7 @@ class TestApiVncClick:
         nats_service._vnc_pool.connection = _mock_pool_connection(mock_client)
 
         with patch(
-            "figaro.services.nats_service.click_with_client",
+            "figaro.services.nats.api_remote.click_with_client",
             new_callable=AsyncMock,
         ) as mock_click:
             result = await nats_service._api_vnc(
@@ -301,7 +301,7 @@ class TestApiVncCredentialFallback:
         nats_service._vnc_pool.connection = _capture_connection
 
         with patch(
-            "figaro.services.nats_service.screenshot_with_client",
+            "figaro.services.nats.api_remote.screenshot_with_client",
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):
@@ -336,7 +336,7 @@ class TestApiVncCredentialFallback:
         nats_service._vnc_pool.connection = _capture_connection
 
         with patch(
-            "figaro.services.nats_service.screenshot_with_client",
+            "figaro.services.nats.api_remote.screenshot_with_client",
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):
@@ -372,7 +372,7 @@ class TestApiVncCredentialFallback:
         nats_service._vnc_pool.connection = _capture_connection
 
         with patch(
-            "figaro.services.nats_service.screenshot_with_client",
+            "figaro.services.nats.api_remote.screenshot_with_client",
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):
@@ -396,7 +396,7 @@ class TestApiVncWsSchemeRouting:
         nats_service._vnc_pool.connection = _mock_pool_connection(mock_client, captured)
 
         with patch(
-            "figaro.services.nats_service.screenshot_with_client",
+            "figaro.services.nats.api_remote.screenshot_with_client",
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):
@@ -433,7 +433,7 @@ class TestApiVncWssSchemeRouting:
         )
 
         with patch(
-            "figaro.services.nats_service.screenshot_with_client",
+            "figaro.services.nats.api_remote.screenshot_with_client",
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):
@@ -473,7 +473,7 @@ class TestApiVncWssSchemeRouting:
         nats_service._vnc_pool.connection = _spy_connection
 
         with patch(
-            "figaro.services.nats_service.screenshot_with_client",
+            "figaro.services.nats.api_remote.screenshot_with_client",
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):
@@ -503,7 +503,7 @@ class TestApiVncWssSchemeRouting:
         )
 
         with patch(
-            "figaro.services.nats_service.screenshot_with_client",
+            "figaro.services.nats.api_remote.screenshot_with_client",
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):
@@ -525,7 +525,7 @@ class TestApiVncUnlock:
         nats_service._vnc_pool.connection = _mock_pool_connection(mock_client)
 
         with patch(
-            "figaro.services.nats_service.unlock_with_client",
+            "figaro.services.nats.api_remote.unlock_with_client",
             new_callable=AsyncMock,
         ) as mock_unlock:
             result = await nats_service._api_vnc(
@@ -547,7 +547,7 @@ class TestApiVncUnlock:
         nats_service._vnc_pool.connection = _mock_pool_connection(mock_client)
 
         with patch(
-            "figaro.services.nats_service.unlock_with_client",
+            "figaro.services.nats.api_remote.unlock_with_client",
             new_callable=AsyncMock,
         ) as mock_unlock:
             result = await nats_service._api_vnc(
@@ -570,7 +570,7 @@ class TestApiVncUnlock:
         nats_service._vnc_pool.connection = _mock_pool_connection(mock_client)
 
         with patch(
-            "figaro.services.nats_service.unlock_with_client",
+            "figaro.services.nats.api_remote.unlock_with_client",
             new_callable=AsyncMock,
         ) as mock_unlock:
             result = await nats_service._api_vnc(
@@ -618,7 +618,7 @@ class TestApiVncVncSchemeRouting:
         nats_service._vnc_pool.connection = _mock_pool_connection(mock_client, captured)
 
         with patch(
-            "figaro.services.nats_service.screenshot_with_client",
+            "figaro.services.nats.api_remote.screenshot_with_client",
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):
@@ -655,7 +655,7 @@ class TestApiVncVncSchemeRouting:
         nats_service._vnc_pool.ws_connection = _spy_ws_connection
 
         with patch(
-            "figaro.services.nats_service.screenshot_with_client",
+            "figaro.services.nats.api_remote.screenshot_with_client",
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):
@@ -681,7 +681,7 @@ class TestApiVncVncSchemeRouting:
         nats_service._vnc_pool.connection = _mock_pool_connection(mock_client, captured)
 
         with patch(
-            "figaro.services.nats_service.screenshot_with_client",
+            "figaro.services.nats.api_remote.screenshot_with_client",
             new_callable=AsyncMock,
             return_value=("img", "image/jpeg", 1920, 1080, 1920, 1080),
         ):

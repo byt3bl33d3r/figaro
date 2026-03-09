@@ -73,6 +73,11 @@ class Subjects:
     BROADCAST_WORKERS = "figaro.broadcast.workers"
     BROADCAST_SUPERVISORS = "figaro.broadcast.supervisors"
     BROADCAST_TASK_CANCELLED = "figaro.broadcast.task_cancelled"
+    BROADCAST_SCHEDULED_TASK_CREATED = "figaro.broadcast.scheduled_task_created"
+    BROADCAST_SCHEDULED_TASK_UPDATED = "figaro.broadcast.scheduled_task_updated"
+    BROADCAST_SCHEDULED_TASK_DELETED = "figaro.broadcast.scheduled_task_deleted"
+    BROADCAST_SCHEDULED_TASK_EXECUTED = "figaro.broadcast.scheduled_task_executed"
+    BROADCAST_SCHEDULED_TASK_AUTO_PAUSED = "figaro.broadcast.scheduled_task_auto_paused"
     BROADCAST_ALL = "figaro.broadcast.>"
 
     # API (NATS request/reply for service-to-service calls)

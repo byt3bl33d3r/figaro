@@ -87,6 +87,25 @@ jobs:
             echo "OK: $svc ($running running)"
           done
 
+      - name: Verify no ports listen on all interfaces
+        run: |
+          violations=$(
+            $COMPOSE_CMD ps --format json |
+            jq -r '
+              .Service as $svc |
+              .Publishers[]? |
+              select(.PublishedPort > 0) |
+              select(.URL == "127.0.0.1" | not) |
+              "\($svc): \(.URL // "0.0.0.0"):\(.PublishedPort)"
+            '
+          )
+          if [[ -n "$violations" ]]; then
+            echo "FAIL: ports bound to non-loopback interfaces:"
+            echo "$violations"
+            exit 1
+          fi
+          echo "OK: all published ports are bound to 127.0.0.1"
+
       - name: Test orchestrator API responds
         run: |
           curl -sf http://localhost:8000/api/config | jq .

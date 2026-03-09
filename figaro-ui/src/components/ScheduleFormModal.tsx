@@ -3,90 +3,13 @@ import ReactMarkdown from 'react-markdown';
 import { createScheduledTask, updateScheduledTask } from '../api/scheduledTasks';
 import { useScheduledTasksStore } from '../stores/scheduledTasks';
 import type { ScheduledTask } from '../types';
-
-type IntervalUnit = 'minutes' | 'hours' | 'days' | 'weeks';
+import { parseInterval, formatScheduleExplainer, isoToDatetimeLocal, datetimeLocalToIso } from './schedule/schedule-utils';
+import type { IntervalUnit } from './schedule/schedule-utils';
+import { PromptEditorModal } from './schedule/PromptEditorModal';
 
 interface Props {
   onClose: () => void;
   editTask?: ScheduledTask;
-}
-
-function parseInterval(seconds: number): { value: string; unit: IntervalUnit } {
-  if (seconds === 0) {
-    return { value: '0', unit: 'minutes' };
-  }
-  if (seconds >= 604800 && seconds % 604800 === 0) {
-    return { value: String(seconds / 604800), unit: 'weeks' };
-  }
-  if (seconds >= 86400 && seconds % 86400 === 0) {
-    return { value: String(seconds / 86400), unit: 'days' };
-  }
-  if (seconds >= 3600 && seconds % 3600 === 0) {
-    return { value: String(seconds / 3600), unit: 'hours' };
-  }
-  return { value: String(seconds / 60), unit: 'minutes' };
-}
-
-function formatScheduleExplainer(
-  runAt: string,
-  intervalValue: string,
-  intervalUnit: IntervalUnit,
-  maxRuns: string
-): string {
-  const interval = parseInt(intervalValue) || 0;
-  const hasRunAt = runAt !== '';
-  const runs = maxRuns ? parseInt(maxRuns) : null;
-
-  const formatRunAt = (val: string) => {
-    const d = new Date(val);
-    return d.toLocaleString(undefined, {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-      hour: 'numeric',
-      minute: '2-digit',
-    });
-  };
-
-  const pluralize = (n: number, unit: string) => {
-    if (n === 1) {
-      const singular: Record<string, string> = {
-        minutes: 'minute',
-        hours: 'hour',
-        days: 'day',
-        weeks: 'week',
-      };
-      return singular[unit] || unit;
-    }
-    return `${n} ${unit}`;
-  };
-
-  const runsSuffix = runs ? `, then stop after ${runs} run${runs === 1 ? '' : 's'}` : '';
-
-  if (hasRunAt && interval === 0) {
-    return `Runs once on ${formatRunAt(runAt)}`;
-  }
-
-  if (hasRunAt && interval > 0) {
-    return `First run on ${formatRunAt(runAt)}, then every ${pluralize(interval, intervalUnit)}${runsSuffix}`;
-  }
-
-  if (interval > 0) {
-    return `Runs immediately, then every ${pluralize(interval, intervalUnit)}${runsSuffix}`;
-  }
-
-  return 'Set an interval or a specific date/time to schedule this task';
-}
-
-function isoToDatetimeLocal(iso: string): string {
-  const date = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
-}
-
-function datetimeLocalToIso(local: string): string {
-  return new Date(local).toISOString();
 }
 
 export function ScheduleFormModal({ onClose, editTask }: Props) {
@@ -259,71 +182,11 @@ export function ScheduleFormModal({ onClose, editTask }: Props) {
 
           {/* Fullscreen Prompt Editor Modal */}
           {promptEditorOpen && (
-            <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-[60]" onClick={() => setPromptEditorOpen(false)}>
-              <div className="bg-cctv-panel border border-cctv-border rounded-lg w-full max-w-5xl mx-4 h-[80vh] flex flex-col shadow-xl" onClick={(e) => e.stopPropagation()}>
-                {/* Editor Header */}
-                <div className="flex items-center justify-between px-4 py-3 border-b border-cctv-border shrink-0">
-                  <h3 className="text-lg font-semibold text-cctv-text">Task Description</h3>
-                  <div className="flex items-center gap-3">
-                    <span className="text-xs text-cctv-text-dim">Supports Markdown</span>
-                    <button
-                      type="button"
-                      onClick={() => setPromptEditorOpen(false)}
-                      className="text-cctv-text-dim hover:text-cctv-text transition-colors"
-                    >
-                      <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                      </svg>
-                    </button>
-                  </div>
-                </div>
-
-                {/* Editor Body: side-by-side edit + preview */}
-                <div className="flex-1 flex min-h-0">
-                  {/* Edit pane */}
-                  <div className="flex-1 flex flex-col border-r border-cctv-border min-w-0">
-                    <div className="px-3 py-1.5 border-b border-cctv-border shrink-0">
-                      <span className="text-xs font-medium text-cctv-text-dim uppercase tracking-wide">Edit</span>
-                    </div>
-                    <textarea
-                      data-testid="prompt-editor"
-                      value={prompt}
-                      onChange={(e) => setPrompt(e.target.value)}
-                      placeholder="Describe what the agent should do...&#10;&#10;Supports **Markdown** formatting."
-                      autoFocus
-                      className="flex-1 w-full bg-cctv-bg px-4 py-3 text-sm text-cctv-text placeholder-cctv-text-dim resize-none focus:outline-none font-mono"
-                    />
-                  </div>
-
-                  {/* Preview pane */}
-                  <div className="flex-1 flex flex-col min-w-0">
-                    <div className="px-3 py-1.5 border-b border-cctv-border shrink-0">
-                      <span className="text-xs font-medium text-cctv-text-dim uppercase tracking-wide">Preview</span>
-                    </div>
-                    <div className="flex-1 overflow-y-auto px-4 py-3">
-                      {prompt ? (
-                        <div className="prose prose-invert prose-sm max-w-none">
-                          <ReactMarkdown>{prompt}</ReactMarkdown>
-                        </div>
-                      ) : (
-                        <span className="text-sm text-cctv-text-dim italic">Nothing to preview</span>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Editor Footer */}
-                <div className="flex justify-end px-4 py-3 border-t border-cctv-border shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setPromptEditorOpen(false)}
-                    className="px-4 py-2 bg-cctv-accent text-cctv-bg font-medium text-sm rounded hover:bg-cctv-accent-dim transition-colors"
-                  >
-                    Done
-                  </button>
-                </div>
-              </div>
-            </div>
+            <PromptEditorModal
+              prompt={prompt}
+              onPromptChange={setPrompt}
+              onClose={() => setPromptEditorOpen(false)}
+            />
           )}
 
           {/* Run At */}

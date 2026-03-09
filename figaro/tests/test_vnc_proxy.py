@@ -71,7 +71,7 @@ class TestVNCProxy:
             novnc_url="not-a-valid-url",
         )
 
-        with patch("figaro.vnc_proxy.websockets.connect") as mock_connect:
+        with patch("figaro.vnc_proxy.proxy.websockets.connect") as mock_connect:
             mock_connect.side_effect = websockets.exceptions.InvalidURI(
                 "not-a-valid-url", "Invalid URI"
             )
@@ -109,9 +109,9 @@ class TestVNCProxy:
         # Client disconnects immediately
         client_ws.receive_bytes.side_effect = Exception("Client disconnected")
 
-        with patch("figaro.vnc_proxy.websockets.connect", side_effect=mock_connect_fn):
+        with patch("figaro.vnc_proxy.proxy.websockets.connect", side_effect=mock_connect_fn):
             with patch(
-                "figaro.vnc_proxy.asyncio.sleep", new_callable=AsyncMock
+                "figaro.vnc_proxy.proxy.asyncio.sleep", new_callable=AsyncMock
             ) as mock_sleep:
                 await proxy_vnc(client_ws, "worker-1", registry)
 
@@ -127,10 +127,10 @@ class TestVNCProxy:
             novnc_url="ws://localhost:6080/websockify",
         )
 
-        with patch("figaro.vnc_proxy.websockets.connect") as mock_connect:
+        with patch("figaro.vnc_proxy.proxy.websockets.connect") as mock_connect:
             mock_connect.side_effect = OSError("Connection refused")
-            with patch("figaro.vnc_proxy.asyncio.sleep", new_callable=AsyncMock):
-                with patch("figaro.vnc_proxy.VNC_MAX_RETRIES", 3):
+            with patch("figaro.vnc_proxy.proxy.asyncio.sleep", new_callable=AsyncMock):
+                with patch("figaro.vnc_proxy.proxy.VNC_MAX_RETRIES", 3):
                     await proxy_vnc(client_ws, "worker-1", registry)
 
         client_ws.close.assert_called_with(
@@ -166,7 +166,7 @@ class TestVNCProxy:
         async def mock_connect(url, **kwargs):
             return vnc_ws
 
-        with patch("figaro.vnc_proxy.websockets.connect", side_effect=mock_connect):
+        with patch("figaro.vnc_proxy.proxy.websockets.connect", side_effect=mock_connect):
             await proxy_vnc(client_ws, "worker-1", registry)
 
         # Verify data was proxied
@@ -448,19 +448,19 @@ class TestProxyVncWithAuth:
 
         with (
             patch(
-                "figaro.vnc_proxy._perform_server_auth",
+                "figaro.vnc_proxy.proxy._perform_server_auth",
                 new_callable=AsyncMock,
                 return_value=b"RFB 003.008\n",
             ) as mock_auth,
             patch(
-                "figaro.vnc_proxy._present_no_auth_to_client",
+                "figaro.vnc_proxy.proxy._present_no_auth_to_client",
                 new_callable=AsyncMock,
             ) as mock_present,
             patch(
-                "figaro.vnc_proxy._bridge_server_init",
+                "figaro.vnc_proxy.proxy._bridge_server_init",
                 new_callable=AsyncMock,
             ) as mock_bridge,
-            patch("figaro.vnc_proxy.websockets.connect") as mock_connect,
+            patch("figaro.vnc_proxy.proxy.websockets.connect") as mock_connect,
         ):
             vnc_ws = MagicMock()
             vnc_ws.close = AsyncMock()
@@ -496,10 +496,10 @@ class TestProxyVncWithAuth:
 
         with (
             patch(
-                "figaro.vnc_proxy._perform_server_auth",
+                "figaro.vnc_proxy.proxy._perform_server_auth",
                 new_callable=AsyncMock,
             ) as mock_auth,
-            patch("figaro.vnc_proxy.websockets.connect") as mock_connect,
+            patch("figaro.vnc_proxy.proxy.websockets.connect") as mock_connect,
         ):
             vnc_ws = MagicMock()
             vnc_ws.close = AsyncMock()
@@ -533,19 +533,19 @@ class TestProxyVncWithAuth:
 
         with (
             patch(
-                "figaro.vnc_proxy._perform_server_auth",
+                "figaro.vnc_proxy.proxy._perform_server_auth",
                 new_callable=AsyncMock,
                 return_value=b"RFB 003.008\n",
             ) as mock_auth,
             patch(
-                "figaro.vnc_proxy._present_no_auth_to_client",
+                "figaro.vnc_proxy.proxy._present_no_auth_to_client",
                 new_callable=AsyncMock,
             ),
             patch(
-                "figaro.vnc_proxy._bridge_server_init",
+                "figaro.vnc_proxy.proxy._bridge_server_init",
                 new_callable=AsyncMock,
             ),
-            patch("figaro.vnc_proxy.websockets.connect") as mock_connect,
+            patch("figaro.vnc_proxy.proxy.websockets.connect") as mock_connect,
         ):
             vnc_ws = MagicMock()
             vnc_ws.close = AsyncMock()
@@ -579,11 +579,11 @@ class TestProxyVncWithAuth:
 
         with (
             patch(
-                "figaro.vnc_proxy._perform_server_auth",
+                "figaro.vnc_proxy.proxy._perform_server_auth",
                 new_callable=AsyncMock,
                 side_effect=ConnectionError("VNC authentication failed"),
             ),
-            patch("figaro.vnc_proxy.websockets.connect") as mock_connect,
+            patch("figaro.vnc_proxy.proxy.websockets.connect") as mock_connect,
         ):
             vnc_ws = MagicMock()
             vnc_ws.close = AsyncMock()
@@ -612,10 +612,10 @@ class TestProxyVncWithAuth:
 
         with (
             patch(
-                "figaro.vnc_proxy._perform_server_auth",
+                "figaro.vnc_proxy.proxy._perform_server_auth",
                 new_callable=AsyncMock,
             ) as mock_auth,
-            patch("figaro.vnc_proxy.websockets.connect") as mock_connect,
+            patch("figaro.vnc_proxy.proxy.websockets.connect") as mock_connect,
         ):
             vnc_ws = MagicMock()
             vnc_ws.close = AsyncMock()
@@ -736,18 +736,18 @@ class TestTlsAutoDetection:
 
         with (
             patch(
-                "figaro.vnc_proxy.asyncio.open_connection",
+                "figaro.vnc_proxy.proxy.asyncio.open_connection",
                 side_effect=mock_open_connection,
             ),
             patch(
-                "figaro.vnc_proxy._perform_server_auth",
+                "figaro.vnc_proxy.proxy._perform_server_auth",
                 new_callable=AsyncMock,
                 return_value=b"RFB 003.008\n",
             ) as mock_auth,
             patch(
-                "figaro.vnc_proxy._present_no_auth_to_client", new_callable=AsyncMock
+                "figaro.vnc_proxy.proxy._present_no_auth_to_client", new_callable=AsyncMock
             ),
-            patch("figaro.vnc_proxy._bridge_server_init", new_callable=AsyncMock),
+            patch("figaro.vnc_proxy.proxy._bridge_server_init", new_callable=AsyncMock),
         ):
             client_ws.receive_bytes.side_effect = Exception("done")
             await proxy_vnc(client_ws, "mac-worker", registry, settings_with_password)
@@ -781,18 +781,18 @@ class TestTlsAutoDetection:
 
         with (
             patch(
-                "figaro.vnc_proxy.asyncio.open_connection",
+                "figaro.vnc_proxy.proxy.asyncio.open_connection",
                 side_effect=mock_open_connection,
             ),
             patch(
-                "figaro.vnc_proxy._perform_server_auth",
+                "figaro.vnc_proxy.proxy._perform_server_auth",
                 new_callable=AsyncMock,
                 return_value=b"RFB 003.008\n",
             ),
             patch(
-                "figaro.vnc_proxy._present_no_auth_to_client", new_callable=AsyncMock
+                "figaro.vnc_proxy.proxy._present_no_auth_to_client", new_callable=AsyncMock
             ),
-            patch("figaro.vnc_proxy._bridge_server_init", new_callable=AsyncMock),
+            patch("figaro.vnc_proxy.proxy._bridge_server_init", new_callable=AsyncMock),
         ):
             client_ws.receive_bytes.side_effect = Exception("done")
             await proxy_vnc(client_ws, "linux-worker", registry, settings_with_password)
@@ -954,19 +954,19 @@ class TestUsernameResolution:
 
         with (
             patch(
-                "figaro.vnc_proxy._perform_server_auth",
+                "figaro.vnc_proxy.proxy._perform_server_auth",
                 new_callable=AsyncMock,
                 return_value=b"RFB 003.008\n",
             ) as mock_auth,
             patch(
-                "figaro.vnc_proxy._present_no_auth_to_client",
+                "figaro.vnc_proxy.proxy._present_no_auth_to_client",
                 new_callable=AsyncMock,
             ),
             patch(
-                "figaro.vnc_proxy._bridge_server_init",
+                "figaro.vnc_proxy.proxy._bridge_server_init",
                 new_callable=AsyncMock,
             ),
-            patch("figaro.vnc_proxy.websockets.connect") as mock_connect,
+            patch("figaro.vnc_proxy.proxy.websockets.connect") as mock_connect,
         ):
             vnc_ws = MagicMock()
             vnc_ws.close = AsyncMock()

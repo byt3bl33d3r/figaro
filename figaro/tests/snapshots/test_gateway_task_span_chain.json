@@ -1,0 +1,38 @@
+[
+  {
+    "name": "gateway.handle_channel_message",
+    "depth": 0
+  },
+  {
+    "name": "task_manager.create_task",
+    "depth": 2
+  },
+  {
+    "name": "supervisor.handle_task",
+    "depth": 3
+  },
+  {
+    "name": "orchestrator.handle_task_complete",
+    "depth": 5
+  },
+  {
+    "name": "task_manager.complete_task",
+    "depth": 6
+  },
+  {
+    "name": "registry.set_worker_status (repeat)",
+    "depth": 6
+  },
+  {
+    "name": "gateway.handle_send_message",
+    "depth": 8
+  },
+  {
+    "name": "orchestrator.process_pending_queue",
+    "depth": 6
+  },
+  {
+    "name": "task_manager.assign_task",
+    "depth": 2
+  }
+]

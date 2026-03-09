@@ -14,6 +14,7 @@ MANUAL_SPAN_PREFIXES = (
     "registry.",
     "supervisor.",
     "ui.",
+    "gateway.",
 )
 
 

@@ -29,6 +29,8 @@ When adding new features or modifying existing ones, always ask: "What happens i
 - **Use `pathlib` for all path operations.** No `os.path` calls — always use `pathlib.Path` for constructing, joining, and manipulating file paths.
 - **Avoid nested functions.** Don't define functions inside other functions — extract them as module-level or class-level methods instead.
 - **No inline imports.** All imports must be at the top of the file — never import inside functions, methods, or conditional blocks.
+- **Use `Subjects` constants for all NATS subjects.** Never use raw strings like `"figaro.broadcast.foo"` — always use `Subjects.SOME_CONSTANT` or `Subjects.some_method(id)` from `figaro_nats.Subjects` (Python) or `nats/subjects.ts` (TypeScript). When adding a new NATS subject, add the constant to `figaro-nats/src/figaro_nats/subjects.py` first, then reference it everywhere.
+- **Keep files under 500 lines.** If a file exceeds 500 lines, split it into smaller, focused modules.
 
 ## Build & Run Commands
 

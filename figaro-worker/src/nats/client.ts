@@ -9,22 +9,24 @@ import {
   type NatsConnection,
   type Subscription,
   type JetStreamClient,
-  type JetStreamSubscription,
-  JSONCodec,
-  DeliverPolicy,
 } from "nats";
 import os from "node:os";
 import { context } from "@opentelemetry/api";
 
 import { Subjects } from "./subjects";
 import { ensureStreams } from "./streams";
-import { injectTraceContext, extractTraceContext } from "../tracing/propagation";
+import { extractTraceContext } from "../tracing/propagation";
+import {
+  publishTaskMessage as _publishTaskMessage,
+  publishTaskComplete as _publishTaskComplete,
+  publishTaskError as _publishTaskError,
+  publishHelpRequest as _publishHelpRequest,
+  sendStatus as _sendStatus,
+  sendHeartbeat as _sendHeartbeat,
+} from "./publishers";
+import { natsRequest, subscribeJetStream, codec, type JsonData } from "./request";
 
-// biome-ignore lint: JSON payloads are loosely typed
-type JsonData = Record<string, any>;
 type EventHandler = (data: JsonData) => Promise<void>;
-
-const codec = JSONCodec<JsonData>();
 
 export class NatsClient {
   private natsUrl: string;
@@ -121,6 +123,13 @@ export class NatsClient {
     return Subjects.REGISTER_WORKER;
   }
 
+  private get stopSubject(): string {
+    if (this._clientType === "supervisor") {
+      return Subjects.supervisorStop(this.clientId);
+    }
+    return Subjects.workerStop(this.clientId);
+  }
+
   // ---- Connection lifecycle ----
 
   /** Connect to NATS, ensure JetStream streams, subscribe, and register. */
@@ -145,13 +154,6 @@ export class NatsClient {
       console.error("[nats-client] Failed to connect to NATS:", err);
       return false;
     }
-  }
-
-  private get stopSubject(): string {
-    if (this._clientType === "supervisor") {
-      return Subjects.supervisorStop(this.clientId);
-    }
-    return Subjects.workerStop(this.clientId);
   }
 
   private async setupSubscriptions(): Promise<void> {
@@ -246,54 +248,22 @@ export class NatsClient {
     await this.emit("task", data);
   }
 
-  // ---- Publish methods for task events (JetStream) ----
+  // ---- Publish methods (delegate to standalone functions) ----
 
   /** Publish a task message (SDK output) via JetStream. */
   async publishTaskMessage(taskId: string, message: JsonData): Promise<void> {
-    const headers = injectTraceContext();
-    await this.js!.publish(
-      Subjects.taskMessage(taskId),
-      codec.encode({
-        task_id: taskId,
-        worker_id: this.clientId,
-        ...(this._clientType === "supervisor" ? { supervisor_id: this.clientId } : {}),
-        ...message,
-      }),
-      { headers },
-    );
+    await _publishTaskMessage(this.js!, this.clientId, this._clientType, taskId, message);
   }
 
   /** Publish task completion via JetStream. */
   async publishTaskComplete(taskId: string, result: unknown): Promise<void> {
-    const headers = injectTraceContext();
-    await this.js!.publish(
-      Subjects.taskComplete(taskId),
-      codec.encode({
-        task_id: taskId,
-        worker_id: this.clientId,
-        ...(this._clientType === "supervisor" ? { supervisor_id: this.clientId } : {}),
-        result,
-      }),
-      { headers },
-    );
+    await _publishTaskComplete(this.js!, this.clientId, this._clientType, taskId, result);
   }
 
   /** Publish task error via JetStream. */
   async publishTaskError(taskId: string, error: string): Promise<void> {
-    const headers = injectTraceContext();
-    await this.js!.publish(
-      Subjects.taskError(taskId),
-      codec.encode({
-        task_id: taskId,
-        worker_id: this.clientId,
-        ...(this._clientType === "supervisor" ? { supervisor_id: this.clientId } : {}),
-        error,
-      }),
-      { headers },
-    );
+    await _publishTaskError(this.js!, this.clientId, this._clientType, taskId, error);
   }
-
-  // ---- Publish methods for Core NATS ----
 
   /** Publish a help request via Core NATS. */
   async publishHelpRequest(
@@ -302,17 +272,7 @@ export class NatsClient {
     questions: JsonData[],
     timeoutSeconds: number = 300,
   ): Promise<void> {
-    this.nc!.publish(
-      Subjects.HELP_REQUEST,
-      codec.encode({
-        request_id: requestId,
-        worker_id: this.clientId,
-        ...(this._clientType === "supervisor" ? { supervisor_id: this.clientId } : {}),
-        task_id: taskId,
-        questions,
-        timeout_seconds: timeoutSeconds,
-      }),
-    );
+    await _publishHelpRequest(this.nc!, this.clientId, this._clientType, requestId, taskId, questions, timeoutSeconds);
   }
 
   /** Send a NATS request/reply with JSON encode/decode. */
@@ -321,8 +281,7 @@ export class NatsClient {
     data: JsonData,
     timeout: number = 10_000,
   ): Promise<JsonData> {
-    const response = await this.nc!.request(subject, codec.encode(data), { timeout });
-    return codec.decode(response.data);
+    return natsRequest(this.nc!, subject, data, timeout);
   }
 
   /** Subscribe to a JetStream subject with an ephemeral push consumer for new messages. */
@@ -330,56 +289,18 @@ export class NatsClient {
     subject: string,
     handler: (data: JsonData) => void,
   ): Promise<{ unsubscribe: () => void }> {
-    const sub: JetStreamSubscription = await this.js!.subscribe(subject, {
-      config: {
-        deliver_policy: DeliverPolicy.New,
-      },
-    });
-    (async () => {
-      for await (const msg of sub) {
-        try {
-          const data = codec.decode(msg.data);
-          handler(data);
-          msg.ack();
-        } catch (err) {
-          console.error(`[nats-client] Error in JetStream handler for ${subject}:`, err);
-        }
-      }
-    })();
-    return {
-      unsubscribe: () => {
-        sub.unsubscribe();
-      },
-    };
+    return subscribeJetStream(this.js!, subject, handler);
   }
 
   /** Publish status update via heartbeat. */
   async sendStatus(status: string): Promise<void> {
     this._status = status;
-    this.nc!.publish(
-      Subjects.heartbeat(this._clientType, this.clientId),
-      codec.encode({
-        client_id: this.clientId,
-        status,
-      }),
-    );
+    await _sendStatus(this.nc!, this.clientId, this._clientType, status);
   }
 
   /** Publish heartbeat. */
   async sendHeartbeat(): Promise<void> {
-    const payload: JsonData = {
-      client_id: this.clientId,
-      client_type: this._clientType,
-      capabilities: this.capabilities,
-      status: this._status,
-    };
-    if (this._clientType === "worker") {
-      payload.novnc_url = this.novncUrl;
-    }
-    this.nc!.publish(
-      Subjects.heartbeat(this._clientType, this.clientId),
-      codec.encode(payload),
-    );
+    await _sendHeartbeat(this.nc!, this.clientId, this._clientType, this.capabilities, this._status, this.novncUrl);
   }
 
   // ---- Run loop ----
