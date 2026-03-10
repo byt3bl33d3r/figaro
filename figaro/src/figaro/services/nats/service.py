@@ -7,7 +7,7 @@ from typing import Any, TYPE_CHECKING
 from figaro_nats import NatsConnection, ensure_streams
 
 from figaro.services.registry import Registry
-from figaro.services.task_manager import TaskManager
+from figaro.services.task_manager import Task, TaskManager
 from figaro.services.vnc_pool import VncConnectionPool
 from figaro.services.nats.subscriptions import setup_subscriptions
 from figaro.services.nats.desktop_init import (
@@ -126,14 +126,14 @@ class NatsService:
     async def publish_task_assignment(
         self,
         worker_id: str,
-        task: Any,
+        task: Task,
     ) -> None:
         await publish_task_assignment(self, worker_id, task)
 
     async def publish_supervisor_task(
         self,
         supervisor_id: str,
-        task: Any,
+        task: Task,
     ) -> bool:
         return await publish_supervisor_task(self, supervisor_id, task)
 
@@ -197,7 +197,7 @@ class NatsService:
     async def _maybe_notify_gateway(
         self,
         task_id: str,
-        result: Any = None,
+        result: dict[str, Any] | None = None,
         error: str | None = None,
     ) -> None:
         await maybe_notify_gateway(self, task_id, result=result, error=error)

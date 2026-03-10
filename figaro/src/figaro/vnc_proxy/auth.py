@@ -8,6 +8,7 @@ from cryptography.hazmat.primitives.asymmetric.padding import PKCS1v15
 from cryptography.hazmat.primitives.ciphers import Cipher, modes
 from cryptography.hazmat.primitives.ciphers.algorithms import AES
 from cryptography.hazmat.primitives.ciphers.modes import ECB
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicKey
 from cryptography.hazmat.primitives.serialization import load_der_public_key
 
 from figaro.vnc_proxy.backends import _TcpBackend, _WsBackend
@@ -75,7 +76,9 @@ async def _apple_auth_response(
     _trailing = await backend.readexactly(1)
 
     # Load the RSA public key from DER format
-    public_key = load_der_public_key(der_key_data)
+    loaded_key = load_der_public_key(der_key_data)
+    assert isinstance(loaded_key, RSAPublicKey)
+    public_key = loaded_key
 
     # Generate random 16-byte AES key
     aes_key = os.urandom(16)

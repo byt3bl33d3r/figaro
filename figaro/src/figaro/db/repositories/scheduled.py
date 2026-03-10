@@ -12,7 +12,7 @@ from figaro.db.models import ScheduledTaskModel
 class ScheduledTaskRepository:
     """Repository for scheduled task database operations."""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def create(
@@ -139,7 +139,7 @@ class ScheduledTaskRepository:
     async def update(
         self,
         schedule_id: str,
-        **values: Any,
+        **values: object,
     ) -> ScheduledTaskModel | None:
         """Update a scheduled task.
 

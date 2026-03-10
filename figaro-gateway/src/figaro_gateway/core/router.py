@@ -49,7 +49,7 @@ async def _handle_send_message(
         logger.warning(f"Channel {channel_name} not found for send")
         return
     chat_id = str(data.get("chat_id", ""))
-    if data.get("image") and hasattr(channel, "send_photo"):
+    if data.get("image"):
         await channel.send_photo(chat_id, data["image"], data.get("caption"))
     else:
         text = data.get("text", "")

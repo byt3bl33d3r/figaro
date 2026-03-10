@@ -7,6 +7,7 @@ from figaro_nats import Subjects, traced
 
 if TYPE_CHECKING:
     from figaro.services.nats.service import NatsService
+    from figaro.services.task_manager import Task
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 async def publish_task_assignment(
     svc: NatsService,
     worker_id: str,
-    task: Any,
+    task: Task,
 ) -> None:
     """Publish a task assignment to a specific worker."""
     await svc.conn.publish(
@@ -48,7 +49,7 @@ async def publish_task_assignment(
 async def publish_supervisor_task(
     svc: NatsService,
     supervisor_id: str,
-    task: Any,
+    task: Task,
 ) -> bool:
     """Publish a task assignment to a specific supervisor.
 
@@ -95,7 +96,7 @@ async def publish_supervisor_task(
     return True
 
 
-async def try_assign_to_supervisor(svc: NatsService, task: Any) -> bool:
+async def try_assign_to_supervisor(svc: NatsService, task: Task) -> bool:
     """Try to assign a task to an idle supervisor, retrying on stale ones.
 
     Loops through available supervisors, verifying each is alive via

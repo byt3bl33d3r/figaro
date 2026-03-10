@@ -53,3 +53,14 @@ exclude_lines = [
 
 [tool.coverage.html]
 directory = "htmlcov"
+
+[tool.ty.src]
+exclude = ["tests/"]
+
+[tool.ruff.lint]
+extend-select = ["ANN"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]
+"src/figaro_nats/tracing.py" = ["ANN401"]
+"src/figaro_nats/trace_chain.py" = ["ANN401"]

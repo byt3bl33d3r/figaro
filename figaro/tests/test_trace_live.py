@@ -29,23 +29,37 @@ NATS_URL = "nats://nats:4222"
 JAEGER_URL = "http://jaeger:16686"
 JAEGER_OTLP_URL = "http://jaeger:4318"
 
-# Set up TracerProviders that export to Jaeger so tests can emit root spans
-# mirroring what the real services do.
-# SimpleSpanProcessor ensures spans are flushed immediately (no batching delay).
-_otlp_endpoint = f"{JAEGER_OTLP_URL}/v1/traces"
+# Lazy-initialized providers — only created when a live test actually runs,
+# so importing this module during collection doesn't connect to Jaeger.
+_ui_provider: TracerProvider | None = None
+_gateway_provider: TracerProvider | None = None
 
-_ui_provider = TracerProvider(resource=Resource.create({"service.name": "figaro-ui"}))
-_ui_provider.add_span_processor(
-    SimpleSpanProcessor(OTLPSpanExporter(endpoint=_otlp_endpoint))
-)
-trace.set_tracer_provider(_ui_provider)
 
-_gateway_provider = TracerProvider(
-    resource=Resource.create({"service.name": "figaro-gateway"})
-)
-_gateway_provider.add_span_processor(
-    SimpleSpanProcessor(OTLPSpanExporter(endpoint=_otlp_endpoint))
-)
+def _ensure_providers() -> tuple[TracerProvider, TracerProvider]:
+    """Create and register tracer providers on first call."""
+    global _ui_provider, _gateway_provider
+    if _ui_provider is None:
+        otlp_endpoint = f"{JAEGER_OTLP_URL}/v1/traces"
+
+        _ui_provider = TracerProvider(
+            resource=Resource.create({"service.name": "figaro-ui"})
+        )
+        _ui_provider.add_span_processor(
+            SimpleSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint))
+        )
+        trace.set_tracer_provider(_ui_provider)
+
+        _gateway_provider = TracerProvider(
+            resource=Resource.create({"service.name": "figaro-gateway"})
+        )
+        _gateway_provider.add_span_processor(
+            SimpleSpanProcessor(OTLPSpanExporter(endpoint=otlp_endpoint))
+        )
+
+    assert _ui_provider is not None
+    assert _gateway_provider is not None
+    return _ui_provider, _gateway_provider
+
 
 EXPECTED_TASK_SUBMISSION_CHAIN = [
     SpanEntry("ui.task_submission", 0),
@@ -85,6 +99,7 @@ async def _submit_task(
     ``traceparent`` header into the NATS request, mirroring what the
     real UI does in ``figaro-ui/src/api/nats.ts``.
     """
+    _ensure_providers()
     tracer = trace.get_tracer("figaro")
     with tracer.start_as_current_span(
         "ui.task_submission", attributes={"task.prompt": prompt}
@@ -264,6 +279,7 @@ async def test_gateway_task_span_chain(record_mode, span_chain_snapshot):
     gateway does), waits for the task to complete and for the result to be
     sent back via figaro.gateway.telegram.send, then asserts the span chain.
     """
+    _, gateway_provider = _ensure_providers()
     nc = await _connect_nats()
     try:
         task_id = str(uuid.uuid4())
@@ -293,7 +309,7 @@ async def test_gateway_task_span_chain(record_mode, span_chain_snapshot):
         send_listener_task = asyncio.create_task(_send_listener())
 
         # Create root span mimicking the gateway's handle_channel_message
-        gateway_tracer = _gateway_provider.get_tracer("figaro")
+        gateway_tracer = gateway_provider.get_tracer("figaro")
         with gateway_tracer.start_as_current_span(
             "gateway.handle_channel_message",
             attributes={"gateway.channel": channel, "gateway.chat_id": chat_id},

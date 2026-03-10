@@ -29,6 +29,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.8.0",
+    "ty>=0.0.19",
 ]
 
 [tool.pytest.ini_options]
@@ -60,3 +61,9 @@ directory = "htmlcov"
 
 [tool.ruff]
 line-length = 120
+
+[tool.ruff.lint]
+extend-select = ["ANN"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["ANN"]

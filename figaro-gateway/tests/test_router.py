@@ -163,6 +163,7 @@ class TestNatsRouter:
         # Remove channel from registry
         registry.unregister("telegram")
 
+        assert send_handler is not None
         # Should not raise
         await send_handler({"chat_id": "123", "text": "hello"})
         ch.send_message.assert_not_called()

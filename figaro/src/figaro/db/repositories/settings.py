@@ -9,7 +9,7 @@ from figaro.db.models import FigaroSettingsModel
 class SettingsRepository:
     """Repository for figaro_settings single-row table."""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def _get_or_create(self) -> FigaroSettingsModel:

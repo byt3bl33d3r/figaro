@@ -4,6 +4,7 @@ import asyncio
 import logging
 
 import websockets
+import websockets.asyncio.client
 
 logger = logging.getLogger(__name__)
 
@@ -11,7 +12,7 @@ logger = logging.getLogger(__name__)
 class _WsStreamWriter:
     """StreamWriter-compatible wrapper that buffers writes and sends via WebSocket on drain."""
 
-    def __init__(self, ws: websockets.WebSocketClientProtocol) -> None:
+    def __init__(self, ws: websockets.asyncio.client.ClientConnection) -> None:
         self._ws = ws
         self._buf = bytearray()
         self._closing = False
@@ -49,7 +50,7 @@ class WsVncAdapter:
         await adapter.close()
     """
 
-    def __init__(self, ws: websockets.WebSocketClientProtocol) -> None:
+    def __init__(self, ws: websockets.asyncio.client.ClientConnection) -> None:
         self._ws = ws
         self._reader = asyncio.StreamReader()
         self._writer = _WsStreamWriter(ws)

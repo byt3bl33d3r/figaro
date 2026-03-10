@@ -54,21 +54,21 @@ async def run_command(
     try:
         if username is not None:
             data = await asyncio.wait_for(reader.read(4096), timeout=timeout)
-            output_parts.append(data)
-            writer.write(f"{username}\n")
+            output_parts.append(str(data))
+            writer.write(f"{username}\n".encode())
 
         if password is not None:
             data = await asyncio.wait_for(reader.read(4096), timeout=timeout)
-            output_parts.append(data)
-            writer.write(f"{password}\n")
+            output_parts.append(str(data))
+            writer.write(f"{password}\n".encode())
 
         # Wait for prompt after login
         if username is not None or password is not None:
             data = await asyncio.wait_for(reader.read(4096), timeout=timeout)
-            output_parts.append(data)
+            output_parts.append(str(data))
 
         # Send the command
-        writer.write(f"{command}\n")
+        writer.write(f"{command}\n".encode())
 
         # Read available output until EOF or timeout
         while True:
@@ -76,7 +76,7 @@ async def run_command(
                 data = await asyncio.wait_for(reader.read(4096), timeout=timeout)
                 if not data:
                     break
-                output_parts.append(data)
+                output_parts.append(str(data))
             except asyncio.TimeoutError:
                 break
 

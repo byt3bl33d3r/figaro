@@ -50,11 +50,6 @@ class TestTelegramChannel:
         assert call_args[0][0] in {111, 222}
         assert call_args[0][1] == "hello"
 
-    async def test_send_message_ignores_extra_kwargs(self, channel):
-        """Test send_message ignores extra kwargs (parse_mode no longer used)."""
-        await channel.send_message("111", "hello", parse_mode="HTML")
-        channel._bot.send_message.assert_called_once_with(111, "hello")
-
     async def test_ask_question_delegates_to_bot(self, channel):
         """Test ask_question delegates to bot."""
         channel._bot.ask_question = AsyncMock(return_value="yes")

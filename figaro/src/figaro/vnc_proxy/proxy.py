@@ -148,7 +148,8 @@ async def proxy_vnc(
                             f"VNC server at {host}:{port} not responding on "
                             "plain TCP, retrying with TLS"
                         )
-                        await backend.close()
+                        if backend is not None:
+                            await backend.close()
                         backend = None
                         use_tls = True
                         continue

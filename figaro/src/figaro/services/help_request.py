@@ -153,7 +153,11 @@ class HelpRequestManager:
             logger.error(f"Failed to persist help request {request.request_id}: {e}")
 
     async def _persist_status(
-        self, request_id: str, status: HelpRequestStatus, **kwargs: Any
+        self,
+        request_id: str,
+        status: HelpRequestStatus,
+        answers: dict[str, str] | None = None,
+        source: str = "ui",
     ) -> None:
         """Update help request status in the database."""
         if not self._session_factory:
@@ -164,8 +168,8 @@ class HelpRequestManager:
                 if status == HelpRequestStatus.RESPONDED:
                     await repo.respond(
                         request_id,
-                        answers=kwargs.get("answers", {}),
-                        response_source=kwargs.get("source", "ui"),
+                        answers=answers or {},
+                        response_source=source,
                     )
                 elif status == HelpRequestStatus.TIMEOUT:
                     await repo.timeout(request_id)

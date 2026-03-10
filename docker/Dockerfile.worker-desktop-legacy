@@ -22,12 +22,12 @@ RUN uv build /app/figaro-nats --out-dir /wheels \
 
 # Export all dependencies (including transitive) and build/download as wheels
 # Use pip wheel to build native extensions like plyvel
-RUN uv export --frozen --no-emit-project --no-hashes > /tmp/requirements.txt && \
+RUN uv export --frozen --no-emit-project --no-hashes --no-dev > /tmp/requirements.txt && \
     pip wheel -r /tmp/requirements.txt -w /wheels
 
 # Export patchright-cli dependencies
 RUN cd /app/patchright-cli && \
-    uv export --frozen --no-emit-project --no-hashes > /tmp/patchright-requirements.txt && \
+    uv export --frozen --no-emit-project --no-hashes --no-dev > /tmp/patchright-requirements.txt && \
     pip wheel -r /tmp/patchright-requirements.txt -w /wheels
 
 FROM mcr.microsoft.com/devcontainers/python:2-3.14-bookworm

@@ -326,7 +326,7 @@ class VncConnectionPool:
         try:
             client = await asyncio.wait_for(
                 asyncvnc.Client.create(
-                    adapter.reader, adapter.writer, username, password
+                    adapter.reader, adapter.writer, username, password  # type: ignore[arg-type]
                 ),
                 timeout=self._connect_timeout,
             )

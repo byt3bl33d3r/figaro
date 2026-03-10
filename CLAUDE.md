@@ -348,9 +348,12 @@ Always run these checks after modifying code:
 
 **Python (figaro/, figaro-gateway/, figaro-nats/):**
 ```bash
+uv run ty check          # Type check (required)
 uv run ruff check .      # Linting (required)
 uv run pytest            # Tests (required)
 ```
+
+**Type checking policy:** Never fix type errors lazily with `# type: ignore`, `cast()`, or `Any` unless the error is caused by a genuine third-party typing limitation (e.g., SQLAlchemy's `session.execute()` returning `Result` instead of `CursorResult` for DML, or duck-typed adapters passed to libraries expecting concrete types). Always fix the root cause first: narrow parameter types, add `None` guards, use explicit parameters instead of `**kwargs`, etc. If a `type: ignore` is truly needed, add a comment explaining why.
 
 **TypeScript — Worker (figaro-worker/):**
 ```bash

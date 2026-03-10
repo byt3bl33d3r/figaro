@@ -21,8 +21,12 @@ class Channel(Protocol):
         """Graceful shutdown."""
         ...
 
-    async def send_message(self, chat_id: str, text: str, **kwargs: Any) -> None:
+    async def send_message(self, chat_id: str, text: str) -> None:
         """Send a text message to a chat/conversation."""
+        ...
+
+    async def send_photo(self, chat_id: str, image_b64: str, caption: str | None = None) -> None:
+        """Send a photo to a chat/conversation."""
         ...
 
     async def ask_question(

@@ -7,12 +7,13 @@ from typing import Any, TYPE_CHECKING
 from figaro_nats import Subjects
 
 if TYPE_CHECKING:
+    from figaro.db.models import ScheduledTaskModel
     from figaro.services.nats.service import NatsService
 
 logger = logging.getLogger(__name__)
 
 
-def format_scheduled_task(task: Any) -> dict[str, Any]:
+def format_scheduled_task(task: ScheduledTaskModel) -> dict[str, object]:
     """Format a ScheduledTask for API response."""
     return {
         "schedule_id": task.schedule_id,

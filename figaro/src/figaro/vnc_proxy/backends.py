@@ -6,6 +6,7 @@ import ssl
 from urllib.parse import urlparse
 
 import websockets
+import websockets.asyncio.client
 from fastapi import WebSocket, WebSocketDisconnect
 
 import logging
@@ -94,7 +95,7 @@ class _TcpBackend:
 class _WsBackend:
     """Backend wrapping a websockets connection."""
 
-    def __init__(self, ws: websockets.WebSocketClientProtocol) -> None:
+    def __init__(self, ws: websockets.asyncio.client.ClientConnection) -> None:
         self._ws = ws
         self._buf = bytearray()
 

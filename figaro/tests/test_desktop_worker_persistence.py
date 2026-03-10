@@ -46,7 +46,7 @@ def _make_nats_service(
         session_factory=session_factory,
     )
     # API handlers call broadcast_workers after mutations
-    svc.broadcast_workers = AsyncMock()
+    svc.broadcast_workers = AsyncMock()  # type: ignore[assignment]
     return svc
 
 

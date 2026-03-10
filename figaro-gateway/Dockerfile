@@ -14,7 +14,7 @@ RUN uv build /app/figaro-nats --out-dir /wheels \
     && uv build . --out-dir /wheels
 
 # Export all dependencies (including transitive) and build/download as wheels
-RUN uv export --frozen --no-emit-project --no-hashes > /tmp/requirements.txt && \
+RUN uv export --frozen --no-emit-project --no-hashes --no-dev > /tmp/requirements.txt && \
     pip wheel -r /tmp/requirements.txt -w /wheels
 
 # Runtime stage

@@ -75,8 +75,8 @@ class TestBuildConnectionSettings:
         assert "width" in settings
         assert "height" in settings
         assert "dpi" in settings
-        assert settings["width"] > 0
-        assert settings["height"] > 0
+        assert int(settings["width"]) > 0
+        assert int(settings["height"]) > 0
 
     def test_includes_credentials(self):
         settings = _build_connection_settings("host", 22, "secret", "admin")

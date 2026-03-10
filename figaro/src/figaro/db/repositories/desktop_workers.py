@@ -12,7 +12,7 @@ from figaro.db.models import DesktopWorkerModel
 class DesktopWorkerRepository:
     """Repository for desktop worker database operations."""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def create(
@@ -124,4 +124,5 @@ class DesktopWorkerRepository:
         result = await self.session.execute(
             delete(DesktopWorkerModel).where(DesktopWorkerModel.worker_id == worker_id)
         )
-        return (result.rowcount or 0) > 0
+        row_count: int = result.rowcount  # type: ignore[union-attr]
+        return row_count > 0

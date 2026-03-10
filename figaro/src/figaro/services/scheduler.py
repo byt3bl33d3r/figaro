@@ -236,7 +236,7 @@ class SchedulerService:
             return await repo.list_all()
 
     async def update_scheduled_task(
-        self, schedule_id: str, **updates: Any
+        self, schedule_id: str, **updates: object
     ) -> ScheduledTaskModel | None:
         """Update a scheduled task."""
         async with self._session_factory() as session:

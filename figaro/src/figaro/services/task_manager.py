@@ -263,7 +263,9 @@ class TaskManager:
             return task
 
     @traced("task_manager.complete_task")
-    async def complete_task(self, task_id: str, result: Any = None) -> Task | None:
+    async def complete_task(
+        self, task_id: str, result: dict[str, Any] | None = None
+    ) -> Task | None:
         # Update database first
         if self._session_factory:
             async with self._session_factory() as session:

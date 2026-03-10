@@ -8,6 +8,8 @@ import logging
 from typing import Any, Callable, Awaitable
 
 import nats
+import nats.aio.msg
+import nats.aio.subscription
 from nats.aio.client import Client
 from nats.js import JetStreamContext
 from nats.js.api import DeliverPolicy, ConsumerConfig
@@ -194,7 +196,7 @@ class NatsConnection:
         self,
         subject: str,
         handler: Callable[[dict[str, Any]], Awaitable[None]],
-        queue: str | None = None,
+        queue: str = "",
     ) -> nats.aio.subscription.Subscription:
         """Subscribe to a subject with a JSON message handler."""
         cb = functools.partial(_subscribe_cb, handler=handler, subject=subject)
@@ -220,7 +222,7 @@ class NatsConnection:
         self,
         subject: str,
         handler: Callable[[dict[str, Any]], Awaitable[dict[str, Any]]],
-        queue: str | None = None,
+        queue: str = "",
     ) -> nats.aio.subscription.Subscription:
         """Subscribe to a request/reply subject. Handler returns the response dict."""
         cb = functools.partial(_subscribe_request_cb, handler=handler, subject=subject)
@@ -234,7 +236,7 @@ class NatsConnection:
         handler: Callable[[dict[str, Any]], Awaitable[None]],
         durable: str | None = None,
         deliver_policy: str = "all",
-    ) -> Any:
+    ) -> JetStreamContext.PushSubscription:
         """Subscribe to a JetStream subject."""
         cb = functools.partial(_js_subscribe_cb, handler=handler, subject=subject)
 

@@ -69,7 +69,7 @@ class TestRunCommand:
             result = await run_command("host", 23, None, None, "ls", timeout=5.0)
 
         assert "file1.txt" in result["output"]
-        mock_writer.write.assert_called_once_with("ls\n")
+        mock_writer.write.assert_called_once_with(b"ls\n")
 
     async def test_command_with_login(self):
         """Running a command with credentials performs login sequence."""
@@ -97,9 +97,9 @@ class TestRunCommand:
 
         # Verify login sequence: username, password, command
         calls = mock_writer.write.call_args_list
-        assert calls[0][0][0] == "admin\n"
-        assert calls[1][0][0] == "secret\n"
-        assert calls[2][0][0] == "ls\n"
+        assert calls[0][0][0] == b"admin\n"
+        assert calls[1][0][0] == b"secret\n"
+        assert calls[2][0][0] == b"ls\n"
 
     async def test_writer_closed_on_completion(self):
         """Writer is closed after command execution."""

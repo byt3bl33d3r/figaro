@@ -5,7 +5,6 @@ from contextlib import asynccontextmanager
 from typing import AsyncIterator
 
 from fastapi import FastAPI
-from sqlalchemy.ext.asyncio import AsyncEngine
 
 from guapy import create_server
 from guapy.models import ClientOptions, CryptConfig, GuacdOptions
@@ -31,27 +30,19 @@ def create_app() -> FastAPI:
     """Create and configure the FastAPI application."""
     settings = Settings()
 
-    # Initialize database
-    engine: AsyncEngine | None = None
-    session_factory = None
-
-    try:
-        engine = create_engine(
-            settings.database_url,
-            pool_size=settings.db_pool_size,
-            max_overflow=settings.db_max_overflow,
-            echo=settings.db_echo,
-            statement_timeout=settings.db_statement_timeout,
-            command_timeout=settings.db_command_timeout,
-        )
-        session_factory = create_session_factory(engine)
-        logger.info(
-            f"Database connection configured: {settings.database_url.split('@')[-1]}"
-        )
-    except Exception as e:
-        logger.warning(
-            f"Failed to configure database, running without persistence: {e}"
-        )
+    # Initialize database (required for scheduler and persistence)
+    engine = create_engine(
+        settings.database_url,
+        pool_size=settings.db_pool_size,
+        max_overflow=settings.db_max_overflow,
+        echo=settings.db_echo,
+        statement_timeout=settings.db_statement_timeout,
+        command_timeout=settings.db_command_timeout,
+    )
+    session_factory = create_session_factory(engine)
+    logger.info(
+        f"Database connection configured: {settings.database_url.split('@')[-1]}"
+    )
 
     # Initialize core services
     registry = Registry()
@@ -84,15 +75,11 @@ def create_app() -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Figaro orchestrator starting up")
 
-        if engine:
-            try:
-                async with engine.begin() as conn:
-                    await conn.run_sync(Base.metadata.create_all)
-                logger.info("Database tables created/verified")
-                await task_manager.load_pending_tasks()
-                await help_request_manager.load_pending_requests()
-            except Exception as e:
-                logger.error(f"Database initialization error: {e}")
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        logger.info("Database tables created/verified")
+        await task_manager.load_pending_tasks()
+        await help_request_manager.load_pending_requests()
 
         # Start NATS service
         await nats_service.start()
@@ -104,9 +91,8 @@ def create_app() -> FastAPI:
         await scheduler.stop()
         await nats_service.stop()
 
-        if engine:
-            await engine.dispose()
-            logger.info("Database connection closed")
+        await engine.dispose()
+        logger.info("Database connection closed")
 
         logger.info("Figaro orchestrator shutting down")
 

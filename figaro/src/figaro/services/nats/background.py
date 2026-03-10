@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 async def maybe_notify_gateway(
     svc: NatsService,
     task_id: str,
-    result: Any = None,
+    result: dict[str, Any] | None = None,
     error: str | None = None,
 ) -> None:
     """Send a gateway notification if the task's scheduled task has notify_on_complete."""

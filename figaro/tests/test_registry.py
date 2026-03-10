@@ -149,6 +149,7 @@ class TestRegistry:
         await registry.register("worker-1", ClientType.WORKER)
 
         conn = await registry.get_connection("worker-1")
+        assert conn is not None
         original_heartbeat = conn.last_heartbeat
 
         # Small delay to ensure time changes
@@ -159,6 +160,7 @@ class TestRegistry:
         await registry.update_heartbeat("worker-1")
 
         conn = await registry.get_connection("worker-1")
+        assert conn is not None
         assert conn.last_heartbeat >= original_heartbeat
 
     @pytest.mark.asyncio
@@ -169,6 +171,7 @@ class TestRegistry:
         await registry.update_heartbeat("worker-1", status=WorkerStatus.BUSY)
 
         conn = await registry.get_connection("worker-1")
+        assert conn is not None
         assert conn.status == WorkerStatus.BUSY
 
     @pytest.mark.asyncio
@@ -187,6 +190,7 @@ class TestRegistry:
 
         # Manually set a very old heartbeat
         conn = await registry.get_connection("worker-1")
+        assert conn is not None
         conn.last_heartbeat = time.time() - 120  # 2 minutes ago
 
         timed_out = await registry.check_heartbeats(timeout=60)
@@ -275,6 +279,7 @@ class TestRegistry:
 
         # Set a very old heartbeat
         conn = await registry.get_connection("desktop-1")
+        assert conn is not None
         conn.last_heartbeat = time.time() - 300  # 5 minutes ago
 
         timed_out = await registry.check_heartbeats(timeout=60)
@@ -294,6 +299,7 @@ class TestRegistry:
         )
 
         before = await registry.get_connection("desktop-1")
+        assert before is not None
         old_heartbeat = before.last_heartbeat
 
         import asyncio

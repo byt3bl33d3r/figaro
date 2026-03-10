@@ -39,7 +39,7 @@ class TelegramChannel:
         """Stop the Telegram bot."""
         await self._bot.stop()
 
-    async def send_message(self, chat_id: str, text: str, **kwargs: Any) -> None:
+    async def send_message(self, chat_id: str, text: str) -> None:
         """Send message via Telegram."""
         int_chat_id = (
             int(chat_id) if chat_id else (list(self._bot._allowed_chat_ids)[0] if self._bot._allowed_chat_ids else 0)

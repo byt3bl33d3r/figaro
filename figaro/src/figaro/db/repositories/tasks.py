@@ -13,7 +13,7 @@ from figaro.db.models import TaskMessageModel, TaskModel, TaskStatus
 class TaskRepository:
     """Repository for task database operations."""
 
-    def __init__(self, session: AsyncSession):
+    def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
     async def create(

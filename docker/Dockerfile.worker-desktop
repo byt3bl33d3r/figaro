@@ -12,7 +12,7 @@ WORKDIR /app
 COPY patchright-cli/ /app/patchright-cli/
 RUN uv build /app/patchright-cli --out-dir /wheels
 RUN cd /app/patchright-cli && \
-    uv export --frozen --no-emit-project --no-hashes > /tmp/patchright-requirements.txt && \
+    uv export --frozen --no-emit-project --no-hashes --no-dev > /tmp/patchright-requirements.txt && \
     pip wheel -r /tmp/patchright-requirements.txt -w /wheels
 
 # Stage 3: Runtime (same desktop environment as Python worker)
