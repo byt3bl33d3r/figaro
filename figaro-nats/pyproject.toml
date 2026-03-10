@@ -24,7 +24,7 @@ dev = [
     "pytest-asyncio>=0.24.0",
     "pytest-cov>=6.0.0",
     "ruff>=0.15.2",
-    "ty>=0.0.18",
+    "ty>=0.0.19",
 ]
 
 [tool.pytest.ini_options]
