@@ -27,7 +27,7 @@
     },
 
     "securityOpt": ["seccomp=docker/seccomp_profile.json"],
-    "initializeCommand": "docker network create figaro-net 2>/dev/null || true",
+    "initializeCommand": "docker network create docker_figaro-net 2>/dev/null || true",
     "runArgs": [
         "--ipc=host",
 		"--shm-size=1g",

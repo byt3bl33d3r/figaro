@@ -106,6 +106,12 @@ class Subjects:
     API_DESKTOP_WORKERS_REMOVE = "figaro.api.desktop-workers.remove"
     API_DESKTOP_WORKERS_UPDATE = "figaro.api.desktop-workers.update"
 
+    # Memories API
+    API_MEMORY_SAVE = "figaro.api.memories.save"
+    API_MEMORY_SEARCH = "figaro.api.memories.search"
+    API_MEMORY_DELETE = "figaro.api.memories.delete"
+    API_MEMORY_LIST = "figaro.api.memories.list"
+
     # Gateway — channel-agnostic (Core NATS)
     @staticmethod
     def gateway_send(channel: str) -> str:

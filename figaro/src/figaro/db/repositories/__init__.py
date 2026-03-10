@@ -6,6 +6,7 @@ from figaro.db.repositories.help_requests import HelpRequestRepository
 from figaro.db.repositories.workers import WorkerSessionRepository
 from figaro.db.repositories.desktop_workers import DesktopWorkerRepository
 from figaro.db.repositories.settings import SettingsRepository
+from figaro.db.repositories.memories import MemoryRepository
 
 __all__ = [
     "TaskRepository",
@@ -14,4 +15,5 @@ __all__ = [
     "WorkerSessionRepository",
     "DesktopWorkerRepository",
     "SettingsRepository",
+    "MemoryRepository",
 ]

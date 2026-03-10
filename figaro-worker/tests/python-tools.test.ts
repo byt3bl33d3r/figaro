@@ -230,4 +230,118 @@ json.dumps({"task_id": task_py["task_id"], "message_count": len(task_py["message
       destroySession();
     }
   });
+
+  test("save_memory sends correct payload", async () => {
+    const mockMemory = {
+      memory_id: "m1",
+      content: "User likes mangos",
+      collection: "user_preferences",
+      metadata: { category: "food" },
+      created_at: "2026-03-10T00:00:00Z",
+      updated_at: "2026-03-10T00:00:00Z",
+    };
+    const natsClient = createMockNatsClient(mockMemory);
+    const { tool, destroySession } = getServerWithNats(natsClient);
+    try {
+      const result = await tool.handler({
+        code: `import figaro
+mem = await figaro.save_memory("User likes mangos", {"category": "food"}, "user_preferences")
+mem_py = mem.to_py()
+mem_py["memory_id"]`,
+      });
+      expect(result.content[0].text).toContain("m1");
+      const call = (natsClient.conn.request as ReturnType<typeof mock>).mock.calls[0];
+      expect(call[0]).toBe("figaro.api.memories.save");
+      const decoder = new TextDecoder();
+      const payload = JSON.parse(decoder.decode(call[1]));
+      expect(payload.content).toBe("User likes mangos");
+      expect(payload.collection).toBe("user_preferences");
+    } finally {
+      destroySession();
+    }
+  });
+
+  test("search_memories returns results", async () => {
+    const mockResults = {
+      results: [
+        { memory_id: "m1", content: "User likes mangos", score: 0.95 },
+        { memory_id: "m2", content: "User prefers dark mode", score: 0.42 },
+      ],
+    };
+    const natsClient = createMockNatsClient(mockResults);
+    const { tool, destroySession } = getServerWithNats(natsClient);
+    try {
+      const result = await tool.handler({
+        code: `import figaro
+results = await figaro.search_memories("food preferences", 5)
+results_py = results.to_py()
+len(results_py)`,
+      });
+      expect(result.content[0].text).toContain("2");
+      const call = (natsClient.conn.request as ReturnType<typeof mock>).mock.calls[0];
+      expect(call[0]).toBe("figaro.api.memories.search");
+      const decoder = new TextDecoder();
+      const payload = JSON.parse(decoder.decode(call[1]));
+      expect(payload.query).toBe("food preferences");
+      expect(payload.limit).toBe(5);
+    } finally {
+      destroySession();
+    }
+  });
+
+  test("delete_memory sends correct payload", async () => {
+    const natsClient = createMockNatsClient({ status: "ok", deleted: true });
+    const { tool, destroySession } = getServerWithNats(natsClient);
+    try {
+      await tool.handler({
+        code: `import figaro
+await figaro.delete_memory("m1")`,
+      });
+      const call = (natsClient.conn.request as ReturnType<typeof mock>).mock.calls[0];
+      expect(call[0]).toBe("figaro.api.memories.delete");
+      const decoder = new TextDecoder();
+      const payload = JSON.parse(decoder.decode(call[1]));
+      expect(payload.memory_id).toBe("m1");
+    } finally {
+      destroySession();
+    }
+  });
+
+  test("list_memories returns memories", async () => {
+    const mockMemories = {
+      memories: [
+        { memory_id: "m1", content: "User likes mangos", collection: "default" },
+      ],
+    };
+    const natsClient = createMockNatsClient(mockMemories);
+    const { tool, destroySession } = getServerWithNats(natsClient);
+    try {
+      const result = await tool.handler({
+        code: `import figaro
+mems = await figaro.list_memories("default", 10)
+mems_py = mems.to_py()
+mems_py[0]["content"]`,
+      });
+      expect(result.content[0].text).toContain("User likes mangos");
+      const call = (natsClient.conn.request as ReturnType<typeof mock>).mock.calls[0];
+      expect(call[0]).toBe("figaro.api.memories.list");
+    } finally {
+      destroySession();
+    }
+  });
+
+  test("nats error response surfaces as Python exception", async () => {
+    const natsClient = createMockNatsClient({ error: "Internal error" });
+    const { tool, destroySession } = getServerWithNats(natsClient);
+    try {
+      const result = await tool.handler({
+        code: `import figaro
+await figaro.save_memory("test")`,
+      });
+      expect(result.content[0].text).toContain("stderr:");
+      expect(result.content[0].text).toContain("Internal error");
+    } finally {
+      destroySession();
+    }
+  });
 });

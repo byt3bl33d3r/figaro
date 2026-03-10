@@ -157,8 +157,12 @@ export class TaskExecutor {
         allowDangerouslySkipPermissions: permissionMode === "bypassPermissions",
         maxTurns: optionsDict.max_turns as number | undefined,
         model: this.model,
+        settings: {
+          autoMemoryEnabled: false
+        },
         settingSources: ["user", "project"],
         canUseTool,
+        disallowedTools: ["Memory"],
         mcpServers: { desktop: desktopTools },
         abortController,
         ...(this.claudeCodePath ? { pathToClaudeCodeExecutable: this.claudeCodePath } : {}),

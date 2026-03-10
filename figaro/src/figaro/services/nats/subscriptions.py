@@ -52,6 +52,12 @@ from figaro.services.nats.api_desktop_workers import (
     api_remove_desktop_worker,
     api_update_desktop_worker,
 )
+from figaro.services.nats.api_memories import (
+    api_delete_memory,
+    api_list_memories,
+    api_save_memory,
+    api_search_memories,
+)
 
 if TYPE_CHECKING:
     from figaro.services.nats.service import NatsService
@@ -240,6 +246,28 @@ async def setup_subscriptions(svc: NatsService) -> None:
     await conn.subscribe_request(
         Subjects.API_TASK_STOP,
         functools.partial(api_stop_task, svc),
+        queue="orchestrator",
+    )
+
+    # Memories API
+    await conn.subscribe_request(
+        Subjects.API_MEMORY_SAVE,
+        functools.partial(api_save_memory, svc),
+        queue="orchestrator",
+    )
+    await conn.subscribe_request(
+        Subjects.API_MEMORY_SEARCH,
+        functools.partial(api_search_memories, svc),
+        queue="orchestrator",
+    )
+    await conn.subscribe_request(
+        Subjects.API_MEMORY_DELETE,
+        functools.partial(api_delete_memory, svc),
+        queue="orchestrator",
+    )
+    await conn.subscribe_request(
+        Subjects.API_MEMORY_LIST,
+        functools.partial(api_list_memories, svc),
         queue="orchestrator",
     )
 

@@ -102,6 +102,12 @@ export const Subjects = {
   API_DESKTOP_WORKERS_REMOVE: "figaro.api.desktop-workers.remove" as const,
   API_DESKTOP_WORKERS_UPDATE: "figaro.api.desktop-workers.update" as const,
 
+  // Memories API
+  API_MEMORY_SAVE: "figaro.api.memories.save" as const,
+  API_MEMORY_SEARCH: "figaro.api.memories.search" as const,
+  API_MEMORY_DELETE: "figaro.api.memories.delete" as const,
+  API_MEMORY_LIST: "figaro.api.memories.list" as const,
+
   // Gateway -- channel-agnostic (Core NATS)
   gatewaySend(channel: string): string {
     return `figaro.gateway.${channel}.send`;

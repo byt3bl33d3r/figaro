@@ -39,6 +39,9 @@ def _create_sqlite_compatible_metadata():
                 col_type = String(36)
             elif isinstance(col_type, EncryptedString):
                 col_type = String(255)
+            elif col.name == "embedding":
+                # Skip the pgvector embedding column — not usable in SQLite
+                col_type = String(255)
             elif isinstance(col_type, BigInteger) and col.primary_key:
                 # SQLite needs INTEGER for autoincrement PKs
                 col_type = Integer()

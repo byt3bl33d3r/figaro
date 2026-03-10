@@ -26,6 +26,8 @@ dependencies = [
     "opentelemetry-instrumentation-fastapi>=0.50b0",
     "opentelemetry-instrumentation-sqlalchemy>=0.50b0",
     "opentelemetry-instrumentation-logging>=0.50b0",
+    "openai>=1.0.0",
+    "pgvector>=0.4.2",
 ]
 
 [tool.uv.sources]

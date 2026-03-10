@@ -16,6 +16,7 @@ from sqlalchemy import (
     Text,
     func,
 )
+from pgvector.sqlalchemy import Vector
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -269,6 +270,41 @@ class DesktopWorkerModel(Base):
     vnc_password: Mapped[str | None] = mapped_column(EncryptedString(), nullable=True)
     metadata_: Mapped[dict[str, Any]] = mapped_column(
         "metadata", JSONB, nullable=False, default=dict
+    )
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=lambda: datetime.now(timezone.utc),
+    )
+
+
+class MemoryModel(Base):
+    """Memory model for agent persistent memories."""
+
+    __tablename__ = "memories"
+
+    memory_id: Mapped[str] = mapped_column(
+        UUID(as_uuid=False),
+        primary_key=True,
+        default=lambda: str(uuid4()),
+    )
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_hash: Mapped[str] = mapped_column(Text, nullable=False)
+    collection: Mapped[str] = mapped_column(
+        String(255), nullable=False, server_default="default"
+    )
+    metadata_: Mapped[dict[str, Any]] = mapped_column(
+        "metadata", JSONB, nullable=False, default=dict
+    )
+    embedding: Mapped[Any | None] = mapped_column(
+        Vector(1536), nullable=True
     )
 
     created_at: Mapped[datetime] = mapped_column(

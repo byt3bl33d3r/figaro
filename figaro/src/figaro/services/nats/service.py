@@ -6,6 +6,7 @@ from typing import Any, TYPE_CHECKING
 
 from figaro_nats import NatsConnection, ensure_streams
 
+from figaro.services.embedding import EmbeddingService
 from figaro.services.registry import Registry
 from figaro.services.task_manager import Task, TaskManager
 from figaro.services.vnc_pool import VncConnectionPool
@@ -78,6 +79,7 @@ class NatsService:
         self._help_request_manager = help_request_manager
         self._settings = settings
         self._session_factory = session_factory
+        self._embedding_service = EmbeddingService(settings.openai_api_key)
         self._conn: NatsConnection | None = None
         self._heartbeat_task: asyncio.Task[None] | None = None
         self._desktop_worker_ids: set[str] = set()

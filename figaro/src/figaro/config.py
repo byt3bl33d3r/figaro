@@ -51,6 +51,9 @@ class Settings(BaseSettings):
     # Encryption settings
     encryption_key: str = _generate_key()
 
+    # OpenAI settings (for memory embeddings)
+    openai_api_key: str | None = None
+
     # Self-healing settings
     self_healing_enabled: bool = True  # System-wide default for self-healing
     self_healing_max_retries: int = 2  # Default max retry attempts

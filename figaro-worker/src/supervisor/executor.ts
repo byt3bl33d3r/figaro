@@ -169,7 +169,10 @@ export class SupervisorExecutor {
           maxTurns: (options.max_turns as number | undefined) ?? this.maxTurns,
           model: this.model,
           canUseTool,
-          disallowedTools: ["ToolSearch"],
+          settings: {
+            autoMemoryEnabled: false
+          },
+          disallowedTools: ["ToolSearch", "Memory"],
           mcpServers: { orchestrator: toolsServer },
           abortController,
           stderr: (data: string) => {
