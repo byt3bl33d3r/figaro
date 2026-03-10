@@ -16,7 +16,7 @@ export function ScheduledTasksList() {
   const updateTask = useScheduledTasksStore((state) => state.updateTask);
   const removeTask = useScheduledTasksStore((state) => state.removeTask);
   const hasFetched = useRef(false);
-  const [isLoading, setIsLoading] = useState(!hasFetched.current);
+  const [isLoading, setIsLoading] = useState(true);
   const [editingTask, setEditingTask] = useState<ScheduledTask | null>(null);
   const [expandedTask, setExpandedTask] = useState<string | null>(null);
 

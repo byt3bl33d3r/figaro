@@ -7,7 +7,7 @@ import {
 } from "nats";
 import { injectTraceContext } from "../tracing/propagation";
 
-// biome-ignore lint: JSON payloads are loosely typed
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type JsonData = Record<string, any>;
 
 export const codec = JSONCodec<JsonData>();

@@ -62,23 +62,29 @@ export function EventStream({ onWorkerClick }: EventStreamProps) {
   }, [loading]);
 
   // Reset loading state on reconnection (events are cleared and JetStream replays)
-  const prevStatusRef = useRef(connectionStatus);
-  useEffect(() => {
-    const prev = prevStatusRef.current;
-    prevStatusRef.current = connectionStatus;
-    if (connectionStatus === 'connected' && prev !== 'connected') {
+  const [prevStatus, setPrevStatus] = useState(connectionStatus);
+  if (prevStatus !== connectionStatus) {
+    setPrevStatus(connectionStatus);
+    if (connectionStatus === 'connected' && prevStatus !== 'connected') {
       setDisplayCount(PAGE_SIZE);
       setLoading(true);
-      isAtBottomRef.current = false;
     }
-  }, [connectionStatus]);
+  }
 
   // Reset display count and loading state when filter changes
-  useEffect(() => {
+  const [prevFilter, setPrevFilter] = useState(filterWorkerId);
+  if (prevFilter !== filterWorkerId) {
+    setPrevFilter(filterWorkerId);
     setDisplayCount(PAGE_SIZE);
     setLoading(true);
-    isAtBottomRef.current = false;
-  }, [filterWorkerId]);
+  }
+
+  // Reset scroll-to-bottom flag whenever loading restarts
+  useEffect(() => {
+    if (loading) {
+      isAtBottomRef.current = false;
+    }
+  }, [loading]);
 
   // Cleanup settle timer on unmount
   useEffect(() => {

@@ -5,11 +5,12 @@ import { loadPyodide, type PyodideInterface } from "pyodide";
 import "pyodide/pyodide.asm.js";
 
 // Embed data files as assets into the compiled binary ($bunfs/)
-// @ts-ignore
+// @ts-expect-error Bun asset imports not recognized by TypeScript
 import wasmPath from "pyodide/pyodide.asm.wasm" with { type: "file" };
-// @ts-ignore
+// @ts-expect-error Bun asset imports not recognized by TypeScript
 import stdlibPath from "pyodide/python_stdlib.zip" with { type: "file" };
-// @ts-ignore
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
+// @ts-ignore Bun asset imports not recognized by TypeScript
 import lockFilePath from "pyodide/pyodide-lock.json" with { type: "file" };
 
 // Reference all asset imports to prevent tree-shaking

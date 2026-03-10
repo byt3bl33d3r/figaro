@@ -34,9 +34,9 @@ vi.mock('guacamole-common-js', () => {
       Client: vi.fn(() => mockClient),
       Mouse: vi.fn(() => {
         const mouse = {
-          onmousedown: null as ((state: any) => void) | null,
-          onmouseup: null as ((state: any) => void) | null,
-          onmousemove: null as ((state: any) => void) | null,
+          onmousedown: null as ((state: Record<string, unknown>) => void) | null,
+          onmouseup: null as ((state: Record<string, unknown>) => void) | null,
+          onmousemove: null as ((state: Record<string, unknown>) => void) | null,
         };
         return mouse;
       }),

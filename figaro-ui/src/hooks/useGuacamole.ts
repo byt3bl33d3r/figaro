@@ -78,10 +78,24 @@ export function useGuacamole(options: UseGuacamoleOptions): UseGuacamoleReturn {
       return;
     }
 
-    // Clean up previous connection
-    disconnect();
-    setError(null);
+    // Clean up previous connection and reset state for new connection attempt.
+    // These setState calls are intentional — they synchronize UI state with the
+    // external Guacamole connection lifecycle at the start of a new effect.
+    clearReconnectTimer();
+    if (keyboardRef.current) {
+      keyboardRef.current.onkeydown = null;
+      keyboardRef.current.onkeyup = null;
+      keyboardRef.current.reset();
+      keyboardRef.current = null;
+    }
+    if (clientRef.current) {
+      clientRef.current.disconnect();
+      clientRef.current = null;
+    }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- intentional: sync UI state with external connection lifecycle
+    setConnected(false);
     setConnecting(true);
+    setError(null);
     reconnectAttemptRef.current = 0;
 
     let cancelled = false;

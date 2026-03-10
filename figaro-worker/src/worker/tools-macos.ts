@@ -10,7 +10,7 @@ import { tool } from "@anthropic-ai/claude-agent-sdk";
 import { z } from "zod";
 import { unlink } from "fs/promises";
 import type { CommandResult } from "./tools";
-import { BUTTON_MAP, result, error } from "./tools";
+import { result, error } from "./tools";
 
 async function runCommand(...args: string[]): Promise<CommandResult> {
   const proc = Bun.spawn(args, {

@@ -9,7 +9,6 @@
 
 import {
   trace,
-  context,
   SpanStatusCode,
   type Tracer,
   type Span,

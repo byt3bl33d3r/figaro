@@ -61,6 +61,7 @@ function extractToolUseBlocks(content: unknown): ToolUseBlock[] {
  * Note: UserMessage is NOT shown because the SDK sends it with every
  * conversation turn. The initial task prompt is shown in task_assigned instead.
  */
+// eslint-disable-next-line react-refresh/only-export-components -- utility used by EventStream for filtering
 export function shouldShowEvent(event: StreamEvent): boolean {
   // Show task lifecycle events
   if (event.type === 'task_assigned' || event.type === 'task_complete' || event.type === 'error' || event.type === 'help_response' || event.type === 'task_healing') {
@@ -146,7 +147,7 @@ function EventContent({ event }: { event: StreamEvent }) {
       return <MessageContent message={event.data as SDKMessage} workerId={event.worker_id} />;
     case 'supervisor_message':
       return <MessageContent message={event.data as SDKMessage} isSupervisor workerId={event.worker_id} />;
-    case 'task_submitted_to_supervisor':
+    case 'task_submitted_to_supervisor': {
       const supervisorSubmitted = event.data as SupervisorTaskSubmittedPayload;
       const supervisorPrompt = supervisorSubmitted.prompt || '';
       const supervisorPromptText = supervisorPrompt.length > 150
@@ -157,14 +158,16 @@ function EventContent({ event }: { event: StreamEvent }) {
           <span className="font-semibold">Supervisor Task:</span> {supervisorPromptText || `${supervisorSubmitted.task_id?.slice(0, 8) || 'unknown'}...`}
         </span>
       );
-    case 'supervisor_task_complete':
+    }
+    case 'supervisor_task_complete': {
       const supervisorComplete = event.data as TaskCompletePayload;
       return (
         <span className="text-purple-400">
           Supervisor task complete: {supervisorComplete.task_id.slice(0, 8)}
         </span>
       );
-    case 'task_assigned':
+    }
+    case 'task_assigned': {
       const assigned = event.data as TaskAssignedPayload;
       const prompt = assigned.prompt || '';
       const promptText = prompt.length > 150
@@ -175,20 +178,23 @@ function EventContent({ event }: { event: StreamEvent }) {
           <span className="font-semibold">Task:</span> {promptText || `${assigned.task_id?.slice(0, 8) || 'unknown'}...`}
         </span>
       );
-    case 'task_complete':
+    }
+    case 'task_complete': {
       const complete = event.data as TaskCompletePayload;
       return (
         <span className="text-cctv-accent">
           Task complete: {complete.task_id.slice(0, 8)}
         </span>
       );
-    case 'error':
+    }
+    case 'error': {
       const error = event.data as ErrorPayload;
       return (
         <span className="text-cctv-error">
           Error: {error.error}
         </span>
       );
+    }
     case 'help_response': {
       const helpResponse = event.data as HelpRequestRespondedPayload;
       const answers = helpResponse.answers || {};
@@ -228,13 +234,14 @@ function EventContent({ event }: { event: StreamEvent }) {
         </span>
       );
     }
-    case 'system':
+    case 'system': {
       const systemData = event.data as { message: string };
       return (
         <span className="text-cctv-text-dim italic">
           {systemData.message}
         </span>
       );
+    }
     default:
       return null;
   }

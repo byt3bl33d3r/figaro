@@ -11,13 +11,13 @@ describe("handleBroadcastEvent", () => {
     useMessagesStore.setState({ events: [] });
     useWorkersStore.setState({
       workers: new Map([
-        ["w1", { id: "w1", status: "busy", novnc_url: "" } as any],
+        ["w1", { id: "w1", status: "busy", novnc_url: "" } as unknown as import("../../src/types").Worker],
       ]),
     });
     useTasksStore.setState({ tasks: new Map() });
     useSupervisorsStore.setState({
       supervisors: new Map([
-        ["s1", { id: "s1", status: "busy" } as any],
+        ["s1", { id: "s1", status: "busy" } as unknown as import("../../src/types").Supervisor],
       ]),
     });
   });

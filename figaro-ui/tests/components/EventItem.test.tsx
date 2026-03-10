@@ -163,7 +163,7 @@ describe('shouldShowEvent', () => {
     it('should not show unknown event types', () => {
       const event: StreamEvent = {
         ...baseEvent,
-        type: 'status' as any,
+        type: 'status' as StreamEvent['type'],
         data: { status: 'idle' },
       };
 

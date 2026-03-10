@@ -129,7 +129,7 @@ export function waitForDelegation(
   const subMessage = nc.subscribe(Subjects.taskMessage(taskId));
   subs.push(subMessage);
   (async () => {
-    for await (const msg of subMessage) {
+    for await (const _msg of subMessage) {
       try {
         resetTimer();
       } catch {

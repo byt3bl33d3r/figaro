@@ -1,6 +1,6 @@
 import type { NatsClient } from "../nats/client";
 
-// biome-ignore lint: JSON payloads are loosely typed
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type JsonData = Record<string, any>;
 
 export function result(data: unknown): {

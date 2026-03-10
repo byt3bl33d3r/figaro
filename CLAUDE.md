@@ -354,12 +354,14 @@ uv run pytest            # Tests (required)
 
 **TypeScript — Worker (figaro-worker/):**
 ```bash
+bun run lint             # Linting (required)
 bunx tsc --noEmit        # Type check (required)
 bun test                 # Tests (required)
 ```
 
 **TypeScript — UI (figaro-ui/):**
 ```bash
+npm run lint             # Linting (required)
 npm run test             # Type check (tsc --noEmit) + Vitest (required)
 ```
 
