@@ -302,6 +302,84 @@ class TestHandleTaskCompleteGatewayRouting:
         nats_service.publish_gateway_send.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_complete_falls_back_to_last_assistant_message_when_result_empty(
+        self, nats_service, task_manager, registry
+    ):
+        """When the SDK ResultMessage has an empty 'result' string (common when
+        supervisors delegate to workers), the handler should fall back to the
+        last assistant message text from the task's conversation history."""
+
+        task = await task_manager.create_task(
+            prompt="Find best tiramisu in Amsterdam",
+            source="gateway",
+            source_metadata={"channel": "telegram", "chat_id": 12345},
+        )
+
+        await registry.register(
+            client_id="supervisor-1",
+            client_type=ClientType.SUPERVISOR,
+            status=WorkerStatus.IDLE,
+        )
+
+        nats_service.publish_gateway_send = AsyncMock()
+
+        # Store task messages simulating a supervisor delegation flow
+        await task_manager.append_message(
+            task.task_id,
+            {
+                "__type__": "AssistantMessage",
+                "content": [
+                    {"type": "tool_use", "name": "delegate_to_worker", "id": "t1"}
+                ],
+            },
+        )
+        await task_manager.append_message(
+            task.task_id,
+            {
+                "__type__": "AssistantMessage",
+                "content": [
+                    {
+                        "type": "text",
+                        "text": "Here are the best tiramisu places in Amsterdam!",
+                    }
+                ],
+            },
+        )
+        await task_manager.append_message(
+            task.task_id,
+            {
+                "__type__": "AssistantMessage",
+                "content": [
+                    {"type": "tool_use", "name": "save_memory", "id": "t2"}
+                ],
+            },
+        )
+
+        # Simulate completion with empty result (supervisor delegation case)
+        result_dict = {
+            "__type__": "ResultMessage",
+            "result": "",
+            "subtype": "success",
+            "session_id": "sess-abc",
+        }
+
+        await nats_service._handle_task_complete(
+            {
+                "task_id": task.task_id,
+                "result": result_dict,
+                "supervisor_id": "supervisor-1",
+            }
+        )
+
+        nats_service.publish_gateway_send.assert_called_once_with(
+            "telegram",
+            {
+                "chat_id": 12345,
+                "text": "Here are the best tiramisu places in Amsterdam!",
+            },
+        )
+
+    @pytest.mark.asyncio
     async def test_complete_no_gateway_send_without_channel_metadata(
         self, nats_service, task_manager, registry
     ):

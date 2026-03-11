@@ -15,6 +15,7 @@ from figaro.services.nats.background import (
     maybe_notify_gateway,
     maybe_optimize_scheduled_task,
     maybe_heal_failed_task,
+    resolve_result_text,
 )
 from figaro.services.nats.publishing import try_assign_to_supervisor
 from figaro.services.nats.queue import process_pending_queue
@@ -237,21 +238,15 @@ async def handle_task_complete(svc: NatsService, data: dict[str, Any]) -> None:
     if supervisor_id:
         await svc.broadcast_supervisors()
 
-    # Send result back to gateway channel if task originated from one
+    # Resolve result text once for both gateway send and scheduled task notification
+    result_text: str | None = None
     if task_id:
         task = await svc._task_manager.get_task(task_id)
         if task and task.source == "gateway" and task.source_metadata:
             channel = task.source_metadata.get("channel")
             chat_id = task.source_metadata.get("chat_id")
             if channel and chat_id:
-                if isinstance(result, dict):
-                    result_text = result.get("result") or result.get("text", "")
-                else:
-                    result_text = result
-                if not result_text:
-                    result_text = "Task completed (no result text)."
-                if not isinstance(result_text, str):
-                    result_text = str(result_text)
+                result_text = await resolve_result_text(svc, task_id, result)
                 await svc.publish_gateway_send(
                     channel,
                     {"chat_id": chat_id, "text": result_text},
@@ -259,7 +254,11 @@ async def handle_task_complete(svc: NatsService, data: dict[str, Any]) -> None:
 
     # Notify gateway if scheduled task has notify_on_complete
     if task_id:
-        asyncio.create_task(maybe_notify_gateway(svc, task_id, result=result))
+        asyncio.create_task(
+            maybe_notify_gateway(
+                svc, task_id, result=result, result_text=result_text
+            )
+        )
 
     # Check if completed task should trigger optimization
     if task_id:

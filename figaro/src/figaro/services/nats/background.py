@@ -15,11 +15,35 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+async def resolve_result_text(
+    svc: NatsService,
+    task_id: str,
+    result: dict[str, Any] | str | None,
+    fallback: str = "Task completed (no result text).",
+) -> str:
+    """Extract a human-readable result string from a task completion payload.
+
+    Tries (in order): result dict fields, last assistant message text, fallback.
+    """
+    if isinstance(result, dict):
+        text = result.get("result") or result.get("text", "")
+    else:
+        text = result
+    if not text:
+        text = await _extract_last_assistant_text(svc, task_id)
+    if not text:
+        text = fallback
+    if not isinstance(text, str):
+        text = str(text)
+    return text
+
+
 async def maybe_notify_gateway(
     svc: NatsService,
     task_id: str,
     result: dict[str, Any] | None = None,
     error: str | None = None,
+    result_text: str | None = None,
 ) -> None:
     """Send a gateway notification if the task's scheduled task has notify_on_complete."""
     try:
@@ -46,14 +70,10 @@ async def maybe_notify_gateway(
         if error:
             text = f"Scheduled task *{task_name}* failed:\n{error}"
         else:
-            if isinstance(result, dict):
-                result_text = result.get("result") or result.get("text", "")
-            else:
-                result_text = result
-            if not result_text:
-                result_text = "No result text."
-            if not isinstance(result_text, str):
-                result_text = str(result_text)
+            if result_text is None:
+                result_text = await resolve_result_text(
+                    svc, task_id, result, fallback="No result text."
+                )
             text = f"Scheduled task *{task_name}* completed:\n{result_text}"
 
         if not svc._gateway_channels:
@@ -70,6 +90,34 @@ async def maybe_notify_gateway(
         logger.info(f"Sent gateway notification for scheduled task {scheduled_task_id}")
     except Exception:
         logger.exception(f"Failed to send gateway notification for task {task_id}")
+
+
+async def _extract_last_assistant_text(svc: NatsService, task_id: str) -> str:
+    """Extract text from the last assistant message with text content.
+
+    When a supervisor delegates to a worker, the SDK ResultMessage.result is
+    often empty because the supervisor's final turn was a tool call, not text.
+    The actual human-readable result is in an earlier assistant message.
+    """
+    history = await svc._task_manager.get_history(task_id)
+    if not history:
+        return ""
+    for msg in reversed(history):
+        if msg.get("__type__") != "AssistantMessage":
+            continue
+        content = msg.get("content")
+        if not isinstance(content, list):
+            continue
+        texts = [
+            block["text"]
+            for block in content
+            if isinstance(block, dict)
+            and block.get("type") == "text"
+            and block.get("text")
+        ]
+        if texts:
+            return "\n\n".join(texts)
+    return ""
 
 
 async def maybe_optimize_scheduled_task(svc: NatsService, task_id: str) -> None:
