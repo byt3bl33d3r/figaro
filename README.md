@@ -1,7 +1,3 @@
-# Figaro
-
-[![Code LLM Generated (with a lot of human oversight)](https://img.shields.io/badge/code-LLM%20generated%20(with%20a%20lot%20of%20human%20oversight)-ff69b4)](https://en.wiktionary.org/wiki/vibecoding)
-
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="docs/figaro_logo.png">
@@ -10,6 +6,12 @@
   </picture>
 </p>
 
+<p align="center">
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://en.wiktionary.org/wiki/vibecoding"><img src="https://img.shields.io/badge/code-LLM%20generated%20(with%20a%20lot%20of%20human%20oversight)-ff69b4" alt="Code LLM Generated (with a lot of human oversight)"></a>
+</p>
+
+---
 
 Figaro orchestrates fleets of Claude computer use agents that automate workflows on full desktop environments. Agents run inside containerized Linux desktops or connect to any VNC-accessible machine -- remote servers, cloud VMs, or physical workstations. All desktops are live-streamed to a central dashboard, and a supervisor agent handles task delegation. Everything can be managed conversationally through external channels like Telegram.
 
