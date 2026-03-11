@@ -27,6 +27,8 @@ You can also manage everything by chatting with the supervisor agent through the
 - [Scheduled Tasks](#scheduled-tasks)
 - [Self-Healing](#self-healing)
 - [Self-Learning](#self-learning)
+- [Agent Memory](#agent-memory)
+- [Gateway](#gateway)
 - [Security](#security)
 - [Architecture](#architecture)
 - [Services](#services)
@@ -245,6 +247,84 @@ Scheduled tasks with `self_learning` enabled automatically optimize their prompt
 - The supervisor is instructed to only update the prompt field, preserving schedule, enabled state, and start URL settings
 - Self-learning is toggled per scheduled task via a checkbox in the UI
 
+## Agent Memory
+
+Figaro has a persistent memory system that lets agents store and retrieve learned knowledge across task executions. Memories are stored in PostgreSQL with hybrid search (BM25 full-text via ParadeDB + pgvector semantic similarity), accessed via NATS request/reply through the agents' Python sandbox.
+
+### How It Works
+
+Both supervisors and workers have access to memory functions (`figaro.save_memory()`, `figaro.search_memories()`, `figaro.list_memories()`, `figaro.delete_memory()`) available in their `python_exec` tool via a built-in `figaro` module. Claude Code's built-in Memory tool is disabled in favor of this custom implementation.
+
+The supervisor workflow integrates memory at two points:
+- **Before delegation:** searches memories for relevant context (site tips, user preferences, past errors) and injects it into the worker's prompt
+- **After task completion:** saves any new learnings as memories for future tasks
+
+### Memory Structure
+
+Each memory has:
+
+| Field | Description |
+|-------|-------------|
+| `content` | Free-text memory content |
+| `collection` | Category for organization (`sites`, `users`, `errors`, `workflows`, or `default`) |
+| `metadata` | Arbitrary JSON key-value pairs |
+| `embedding` | 1536-dimensional vector (OpenAI `text-embedding-3-small`) for semantic search |
+
+Standard collections:
+- **`sites`** -- site-specific knowledge (URLs, login flows, navigation patterns, cookie banners)
+- **`users`** -- user preferences and requirements
+- **`errors`** -- failure patterns and known fixes
+- **`workflows`** -- multi-step procedures for recurring tasks
+
+### Search
+
+Memory search uses Reciprocal Rank Fusion (RRF) combining BM25 full-text search and pgvector cosine similarity. BM25 receives 2x weight in the fusion. If no OpenAI API key is configured, embeddings are skipped and search falls back to BM25 only.
+
+Memories are deduplicated by `(collection, content_hash)` -- saving the same content to the same collection updates the existing record.
+
+### NATS API
+
+```
+figaro.api.memories.save                  # Save a memory (upsert by content hash)
+figaro.api.memories.search                # Hybrid BM25 + vector search
+figaro.api.memories.list                  # List memories (optional collection filter)
+figaro.api.memories.delete                # Delete a memory by ID
+```
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `OPENAI_API_KEY` | -- | OpenAI API key for embedding generation (optional, degrades to BM25-only search) |
+
+## Gateway
+
+The gateway is a channel-agnostic messaging service that routes messages between external communication channels (Telegram, future: WhatsApp, Slack, etc.) and the orchestration system. Users can send natural language instructions to create tasks, schedule jobs, check status, or ask questions -- all through a conversational interface.
+
+Messages can include attachments (images, documents, etc.) up to 20 MB, which are forwarded to the supervisor agent alongside the text prompt.
+
+### Voice Message Transcription
+
+The gateway supports voice message transcription. When a user sends a voice or audio message, it is automatically transcribed to text and processed as a regular task -- no special handling needed from the user's perspective.
+
+1. User sends a voice/audio message via Telegram
+2. The gateway downloads the audio file from Telegram
+3. Audio is converted to raw PCM (16-bit, 16kHz, mono) via `ffmpeg`
+4. PCM data is streamed in 100ms chunks over a WebSocket to Claude's STT endpoint (`/api/ws/speech_to_text/voice_stream`)
+5. The endpoint returns transcript segments which are assembled into the final text
+6. The transcribed text follows the exact same path as a typed message -- published to NATS for task creation and supervisor delegation
+
+Authentication uses a Claude CLI OAuth token read from the credentials file (`~/.claude/.credentials.json`). The token is loaded fresh on every request, so credential rotation is handled automatically. `ffmpeg` must be available in the gateway container's `PATH` (included in the Docker image).
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `GATEWAY_TELEGRAM_BOT_TOKEN` | -- | Telegram bot token (create via [@BotFather](https://t.me/BotFather)) |
+| `GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS` | -- | Allowed Telegram chat IDs (JSON array) |
+| `GATEWAY_STT_BASE_URL` | `wss://claude.ai` | STT WebSocket base URL |
+| `GATEWAY_STT_CREDENTIALS_PATH` | `~/.claude/.credentials.json` | Path to Claude credentials file for OAuth token |
+
 ## Security
 
 > [!CAUTION]
@@ -411,6 +491,9 @@ uv run alembic revision --autogenerate -m "description"  # Create new migration
 | `GATEWAY_NATS_URL` | Gateway | NATS server URL | -- |
 | `GATEWAY_TELEGRAM_BOT_TOKEN` | Gateway | Telegram bot token | -- |
 | `GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS` | Gateway | Allowed Telegram chat IDs (JSON array) | -- |
+| `GATEWAY_STT_BASE_URL` | Gateway | STT WebSocket base URL | `wss://claude.ai` |
+| `GATEWAY_STT_CREDENTIALS_PATH` | Gateway | Path to Claude credentials file for STT OAuth token | `~/.claude/.credentials.json` |
+| `OPENAI_API_KEY` | Orchestrator | OpenAI API key for memory embeddings (optional) | -- |
 | `VITE_NATS_WS_URL` | UI | NATS WebSocket URL | `ws://localhost:8443` |
 
 ### NATS Configuration
@@ -477,6 +560,10 @@ figaro.api.help-requests.dismiss          # Dismiss help request
 figaro.api.vnc                            # VNC operations (screenshot, type, key, click)
 figaro.api.ssh                            # SSH operations (run_command)
 figaro.api.telnet                         # Telnet operations (run_command)
+figaro.api.memories.save                  # Save a memory
+figaro.api.memories.search                # Search memories (hybrid BM25 + vector)
+figaro.api.memories.list                  # List memories
+figaro.api.memories.delete                # Delete a memory
 ```
 
 ### Gateway (Core NATS)
@@ -547,3 +634,4 @@ Pull requests are welcome! Issues are disabled on this repository -- if you've f
 
 - [OpenClaw](https://openclaw.ai) for design inspiration around some agent control primitives (e.g. loop control, cost tracking etc..)
 - [Apache Guacamole](https://guacamole.apache.org) & [Guapy](https://github.com/Adithya1331/guapy) 
+- [QMD](https://github.com/tobi/qmd) for the agent memory RAG implementation

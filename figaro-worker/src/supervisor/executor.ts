@@ -9,11 +9,31 @@ import { LoopDetectionSession, buildLoopDetectionHooks, type LoopDetectionConfig
 import { serializeMessage } from "../shared/serialize";
 import { traced } from "../tracing/tracer";
 import { HelpRequestHandler } from "../worker/help-request";
+import type { ContentBlock } from "../types";
 import {
   formatSupervisorPrompt,
   SUPERVISOR_SYSTEM_PROMPT,
 } from "./prompt-formatter";
 import { createSupervisorToolsServer } from "./tools";
+
+async function* createMultimodalPrompt(
+  content: ContentBlock[],
+): AsyncGenerator<{
+  type: "user";
+  session_id: string;
+  parent_tool_use_id: null;
+  message: { role: "user"; content: ContentBlock[] };
+}> {
+  yield {
+    type: "user",
+    session_id: crypto.randomUUID(),
+    parent_tool_use_id: null,
+    message: {
+      role: "user",
+      content,
+    },
+  };
+}
 
 interface TaskSession {
   taskId: string;
@@ -107,6 +127,9 @@ export class SupervisorExecutor {
         sourceMetadata,
         this.client.id,
       );
+      const queryPrompt = typeof formattedPrompt === "string"
+        ? formattedPrompt
+        : createMultimodalPrompt(formattedPrompt);
 
       // canUseTool callback: intercept AskUserQuestion, allow everything else
       const canUseTool = async (
@@ -157,7 +180,7 @@ export class SupervisorExecutor {
       this.abortControllers.set(taskId, abortController);
 
       const q = query({
-        prompt: formattedPrompt,
+        prompt: queryPrompt,
         options: {
           systemPrompt: {
             type: "preset" as const,

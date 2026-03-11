@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Callable, Awaitable
 
 from .bot import TelegramBot
@@ -17,12 +18,16 @@ class TelegramChannel:
         self,
         bot_token: str,
         allowed_chat_ids: list[int] | None = None,
+        stt_base_url: str = "wss://claude.ai",
+        stt_credentials_path: Path | None = None,
     ) -> None:
         self._bot = TelegramBot(
             bot_token=bot_token,
             allowed_chat_ids=allowed_chat_ids or [],
+            stt_base_url=stt_base_url,
+            stt_credentials_path=stt_credentials_path,
         )
-        self._message_callback: Callable[[str, str, str | None], Awaitable[None]] | None = None
+        self._message_callback: Callable[[str, str, str | None, list[dict] | None], Awaitable[None]] | None = None
 
     @property
     def name(self) -> str:
@@ -70,11 +75,11 @@ class TelegramChannel:
             timeout_seconds=timeout,
         )
 
-    def on_message(self, callback: Callable[[str, str, str | None], Awaitable[None]]) -> None:
+    def on_message(self, callback: Callable[[str, str, str | None, list[dict] | None], Awaitable[None]]) -> None:
         """Register callback for incoming messages."""
         self._message_callback = callback
 
-    async def _wrap_callback(self, chat_id: int, text: str, task_id: str | None = None) -> None:
+    async def _wrap_callback(self, chat_id: int, text: str, attachments: list[dict] | None = None) -> None:
         """Wrap the internal bot callback to match Channel protocol signature."""
         if self._message_callback:
-            await self._message_callback(str(chat_id), text, task_id)
+            await self._message_callback(str(chat_id), text, None, attachments)

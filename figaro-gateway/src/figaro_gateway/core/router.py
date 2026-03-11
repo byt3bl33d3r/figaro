@@ -19,19 +19,23 @@ async def _handle_channel_message(
     chat_id: str,
     text: str,
     task_id: str | None,
+    attachments: list[dict] | None = None,
     *,
     conn: NatsConnection,
     channel_name: str,
 ) -> None:
     """Handle an incoming message from a channel by publishing to NATS."""
+    payload: dict[str, Any] = {
+        "channel": channel_name,
+        "chat_id": chat_id,
+        "text": text,
+        "task_id": task_id,
+    }
+    if attachments:
+        payload["attachments"] = attachments
     await conn.publish(
         Subjects.gateway_task(channel_name),
-        {
-            "channel": channel_name,
-            "chat_id": chat_id,
-            "text": text,
-            "task_id": task_id,
-        },
+        payload,
     )
     logger.debug(f"Published message from {channel_name} chat {chat_id} to NATS")
 

@@ -40,6 +40,6 @@ class Channel(Protocol):
         """Ask a question and wait for response. Returns answer text or None on timeout."""
         ...
 
-    def on_message(self, callback: Callable[[str, str, str | None], Awaitable[None]]) -> None:
-        """Register callback for incoming messages: (chat_id, text, task_id?) -> None."""
+    def on_message(self, callback: Callable[[str, str, str | None, list[dict] | None], Awaitable[None]]) -> None:
+        """Register callback for incoming messages: (chat_id, text, task_id?, attachments?) -> None."""
         ...

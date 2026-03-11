@@ -84,15 +84,23 @@ class TestTelegramChannel:
         """Test _wrap_callback converts int chat_id to str."""
         callback = AsyncMock()
         channel._message_callback = callback
-        await channel._wrap_callback(123, "hello", "task-1")
-        callback.assert_called_once_with("123", "hello", "task-1")
+        await channel._wrap_callback(123, "hello")
+        callback.assert_called_once_with("123", "hello", None, None)
 
     async def test_wrap_callback_no_task_id(self, channel):
         """Test _wrap_callback works without task_id."""
         callback = AsyncMock()
         channel._message_callback = callback
         await channel._wrap_callback(123, "hello")
-        callback.assert_called_once_with("123", "hello", None)
+        callback.assert_called_once_with("123", "hello", None, None)
+
+    async def test_wrap_callback_forwards_attachments(self, channel):
+        """Test _wrap_callback forwards attachments parameter."""
+        callback = AsyncMock()
+        channel._message_callback = callback
+        attachments = [{"type": "image", "media_type": "image/jpeg", "data": "abc123"}]
+        await channel._wrap_callback(123, "hello", attachments)
+        callback.assert_called_once_with("123", "hello", None, attachments)
 
     async def test_wrap_callback_no_callback_set(self, channel):
         """Test _wrap_callback does nothing if no callback registered."""

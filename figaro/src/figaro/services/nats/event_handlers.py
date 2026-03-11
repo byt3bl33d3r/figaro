@@ -368,6 +368,10 @@ async def handle_gateway_task(svc: NatsService, data: dict[str, Any]) -> None:
     if chat_id:
         source_metadata["chat_id"] = chat_id
 
+    attachments = data.get("attachments")
+    if attachments:
+        options["attachments"] = attachments
+
     task = await svc._task_manager.create_task(
         prompt=prompt,
         options=options,

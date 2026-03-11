@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from figaro_gateway.channels.telegram.bot import TelegramBot
+from figaro_gateway.stt import TranscriptionError
 
 
 def _make_update(chat_id: int, text: str, chat_type: str = "private"):
@@ -49,7 +50,7 @@ class TestHandleMention:
         update = _make_update(chat_id=111, text="Check the price on amazon.com", chat_type="private")
         await bot._handle_mention(update, MagicMock())
 
-        callback.assert_called_once_with(111, "Check the price on amazon.com")
+        callback.assert_called_once_with(111, "Check the price on amazon.com", None)
 
     async def test_private_chat_empty_message_prompts_usage(self, bot):
         """In a private chat, an empty (whitespace-only) message replies with help text."""
@@ -72,7 +73,7 @@ class TestHandleMention:
         update = _make_update(chat_id=111, text="@test_bot do something", chat_type="group")
         await bot._handle_mention(update, MagicMock())
 
-        callback.assert_called_once_with(111, "do something")
+        callback.assert_called_once_with(111, "do something", None)
 
     async def test_group_chat_without_mention_is_ignored(self, bot):
         """In a group chat, a message without @mention is silently ignored — no callback, no reply."""
@@ -126,7 +127,7 @@ class TestHandleMention:
         update = _make_update(chat_id=111, text="@Test_Bot do stuff", chat_type="group")
         await bot._handle_mention(update, MagicMock())
 
-        callback.assert_called_once_with(111, "do stuff")
+        callback.assert_called_once_with(111, "do stuff", None)
 
     async def test_no_callback_registered_replies_not_configured(self, bot):
         """If no message callback is registered, replies with 'not configured' message."""
@@ -753,3 +754,333 @@ class TestHandleMentionErrors:
         await bot._handle_mention(update, MagicMock())
 
         update.message.reply_text.assert_called_once_with("Error processing message.")
+
+
+def _make_photo_update(
+    chat_id: int,
+    caption: str | None = None,
+    chat_type: str = "private",
+    has_document: bool = False,
+):
+    """Create a mock telegram Update with a photo or document message."""
+    chat = MagicMock()
+    chat.type = chat_type
+
+    message = MagicMock()
+    message.chat = chat
+    message.chat_id = chat_id
+    message.caption = caption
+    message.reply_text = AsyncMock()
+
+    if has_document:
+        message.photo = None
+        doc = MagicMock()
+        doc.mime_type = "application/pdf"
+        doc.file_name = "report.pdf"
+        mock_file = AsyncMock()
+        mock_file.download_as_bytearray = AsyncMock(return_value=bytearray(b"pdf-data"))
+        doc.get_file = AsyncMock(return_value=mock_file)
+        message.document = doc
+    else:
+        message.document = None
+        photo_size = MagicMock()
+        mock_file = AsyncMock()
+        mock_file.download_as_bytearray = AsyncMock(return_value=bytearray(b"jpeg-data"))
+        mock_file.file_path = "photos/file_123.jpg"
+        photo_size.get_file = AsyncMock(return_value=mock_file)
+        message.photo = [MagicMock(), photo_size]  # Two sizes, handler uses [-1]
+
+    update = MagicMock()
+    update.message = message
+    return update
+
+
+class TestHandlePhoto:
+    """Tests for _handle_photo — photo and document attachment handling."""
+
+    async def test_photo_in_private_chat(self, bot):
+        """Photo in private chat creates task with image attachment."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_photo_update(chat_id=111, caption="What is this?")
+        await bot._handle_photo(update, MagicMock())
+
+        callback.assert_called_once()
+        args = callback.call_args[0]
+        assert args[0] == 111
+        assert args[1] == "What is this?"
+        attachments = args[2]
+        assert len(attachments) == 1
+        assert attachments[0]["type"] == "image"
+        assert attachments[0]["media_type"] == "image/jpeg"
+        assert attachments[0]["filename"] == "file_123.jpg"
+
+    async def test_photo_without_caption_uses_default(self, bot):
+        """Photo without caption uses default prompt text."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_photo_update(chat_id=111, caption=None)
+        await bot._handle_photo(update, MagicMock())
+
+        callback.assert_called_once()
+        assert callback.call_args[0][1] == "Please analyze this attachment"
+
+    async def test_document_message(self, bot):
+        """Document message creates task with document attachment."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_photo_update(chat_id=111, caption="Review this", has_document=True)
+        await bot._handle_photo(update, MagicMock())
+
+        callback.assert_called_once()
+        attachments = callback.call_args[0][2]
+        assert attachments[0]["type"] == "document"
+        assert attachments[0]["media_type"] == "application/pdf"
+        assert attachments[0]["filename"] == "report.pdf"
+
+    async def test_group_chat_requires_mention(self, bot):
+        """In group chat, photo without mention is ignored."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_photo_update(chat_id=111, caption="some photo", chat_type="group")
+        await bot._handle_photo(update, MagicMock())
+
+        callback.assert_not_called()
+
+    async def test_group_chat_with_mention(self, bot):
+        """In group chat, photo with bot mention creates task."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_photo_update(chat_id=111, caption="@test_bot analyze this", chat_type="group")
+        await bot._handle_photo(update, MagicMock())
+
+        callback.assert_called_once()
+        assert callback.call_args[0][1] == "analyze this"
+
+    async def test_disallowed_chat_ignored(self, bot):
+        """Photo from disallowed chat is ignored."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_photo_update(chat_id=999)
+        await bot._handle_photo(update, MagicMock())
+
+        callback.assert_not_called()
+
+    async def test_no_callback_replies_not_configured(self, bot):
+        """If no callback registered, replies with not configured."""
+        bot._message_callback = None
+
+        update = _make_photo_update(chat_id=111)
+        await bot._handle_photo(update, MagicMock())
+
+        update.message.reply_text.assert_called_once_with("Task processing is not configured.")
+
+    async def test_download_failure_replies_error(self, bot):
+        """When file download fails, replies with error."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_photo_update(chat_id=111)
+        # Make get_file raise
+        update.message.photo[-1].get_file = AsyncMock(side_effect=Exception("download failed"))
+        await bot._handle_photo(update, MagicMock())
+
+        callback.assert_not_called()
+        update.message.reply_text.assert_called_once_with("Failed to process attachment.")
+
+
+def _make_voice_update(chat_id: int, is_audio: bool = False, file_size: int = 1000):
+    """Create a mock telegram Update with a voice or audio message."""
+    chat = MagicMock()
+    chat.type = "private"
+
+    mock_file = AsyncMock()
+    mock_file.download_as_bytearray = AsyncMock(return_value=bytearray(b"\x00" * file_size))
+
+    voice_or_audio = MagicMock()
+    voice_or_audio.get_file = AsyncMock(return_value=mock_file)
+
+    message = MagicMock()
+    message.chat = chat
+    message.chat_id = chat_id
+    message.reply_text = AsyncMock()
+    message.set_reaction = AsyncMock()
+
+    if is_audio:
+        message.voice = None
+        message.audio = voice_or_audio
+    else:
+        message.voice = voice_or_audio
+        message.audio = None
+
+    update = MagicMock()
+    update.message = message
+    return update
+
+
+class TestHandleVoice:
+    """Tests for _handle_voice — voice message and audio transcription."""
+
+    async def test_voice_message_happy_path(self, bot):
+        """Voice message is transcribed and forwarded to message callback."""
+        from telegram import ReactionTypeEmoji
+
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_voice_update(chat_id=111)
+
+        with (
+            patch("figaro_gateway.channels.telegram.bot.load_oauth_token", return_value="token-123"),
+            patch(
+                "figaro_gateway.channels.telegram.bot.transcribe_audio",
+                return_value="hello world",
+            ),
+        ):
+            await bot._handle_voice(update, MagicMock())
+
+        callback.assert_called_once_with(111, "hello world", None)
+        update.message.set_reaction.assert_called_once()
+        reaction = update.message.set_reaction.call_args[0][0]
+        assert len(reaction) == 1
+        assert isinstance(reaction[0], ReactionTypeEmoji)
+        assert reaction[0].emoji == "👀"
+
+    async def test_audio_attachment_happy_path(self, bot):
+        """Audio file attachment is transcribed and forwarded."""
+        from telegram import ReactionTypeEmoji
+
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_voice_update(chat_id=111, is_audio=True)
+
+        with (
+            patch("figaro_gateway.channels.telegram.bot.load_oauth_token", return_value="token-123"),
+            patch(
+                "figaro_gateway.channels.telegram.bot.transcribe_audio",
+                return_value="transcribed text",
+            ),
+        ):
+            await bot._handle_voice(update, MagicMock())
+
+        callback.assert_called_once_with(111, "transcribed text", None)
+        update.message.set_reaction.assert_called_once()
+        reaction = update.message.set_reaction.call_args[0][0]
+        assert len(reaction) == 1
+        assert isinstance(reaction[0], ReactionTypeEmoji)
+        assert reaction[0].emoji == "👀"
+
+    async def test_no_credentials_replies_error(self, bot):
+        """When OAuth token is not available, replies with error message."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_voice_update(chat_id=111)
+
+        with patch("figaro_gateway.channels.telegram.bot.load_oauth_token", return_value=None):
+            await bot._handle_voice(update, MagicMock())
+
+        callback.assert_not_called()
+        update.message.set_reaction.assert_not_called()
+        update.message.reply_text.assert_called_once_with(
+            "Voice messages can't be processed — STT credentials not configured."
+        )
+
+    async def test_disallowed_chat_ignored(self, bot):
+        """Voice from disallowed chat is silently ignored."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_voice_update(chat_id=999)
+
+        await bot._handle_voice(update, MagicMock())
+
+        callback.assert_not_called()
+        update.message.reply_text.assert_not_called()
+
+    async def test_transcription_failure_replies_error(self, bot):
+        """When transcription fails, replies with error message."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_voice_update(chat_id=111)
+
+        with (
+            patch("figaro_gateway.channels.telegram.bot.load_oauth_token", return_value="token-123"),
+            patch(
+                "figaro_gateway.channels.telegram.bot.transcribe_audio",
+                side_effect=TranscriptionError("ffmpeg failed"),
+            ),
+        ):
+            await bot._handle_voice(update, MagicMock())
+
+        callback.assert_not_called()
+        update.message.set_reaction.assert_not_called()
+        update.message.reply_text.assert_called_once_with("Failed to transcribe voice message.")
+
+    async def test_empty_transcript_replies_no_speech(self, bot):
+        """When transcript is empty, replies accordingly."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_voice_update(chat_id=111)
+
+        with (
+            patch("figaro_gateway.channels.telegram.bot.load_oauth_token", return_value="token-123"),
+            patch("figaro_gateway.channels.telegram.bot.transcribe_audio", return_value="  "),
+        ):
+            await bot._handle_voice(update, MagicMock())
+
+        callback.assert_not_called()
+        update.message.set_reaction.assert_not_called()
+        update.message.reply_text.assert_called_once_with("No speech detected in the audio.")
+
+    async def test_file_too_large_replies_error(self, bot):
+        """When audio file exceeds size limit, replies with error."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_voice_update(chat_id=111, file_size=25 * 1024 * 1024)
+
+        with patch("figaro_gateway.channels.telegram.bot.load_oauth_token", return_value="token-123"):
+            await bot._handle_voice(update, MagicMock())
+
+        callback.assert_not_called()
+        update.message.set_reaction.assert_not_called()
+        update.message.reply_text.assert_called_once_with("Audio file is too large (max 20MB).")
+
+    async def test_no_callback_replies_not_configured(self, bot):
+        """When no message callback registered, replies with not configured."""
+        bot._message_callback = None
+
+        update = _make_voice_update(chat_id=111)
+
+        with (
+            patch("figaro_gateway.channels.telegram.bot.load_oauth_token", return_value="token-123"),
+            patch("figaro_gateway.channels.telegram.bot.transcribe_audio", return_value="hello"),
+        ):
+            await bot._handle_voice(update, MagicMock())
+
+        update.message.reply_text.assert_called_once_with("Task processing is not configured.")
+
+    async def test_download_failure_replies_error(self, bot):
+        """When audio file download fails, replies with error."""
+        callback = AsyncMock()
+        bot.on_message(callback)
+
+        update = _make_voice_update(chat_id=111)
+        update.message.voice.get_file = AsyncMock(side_effect=Exception("download failed"))
+
+        with patch("figaro_gateway.channels.telegram.bot.load_oauth_token", return_value="token-123"):
+            await bot._handle_voice(update, MagicMock())
+
+        callback.assert_not_called()
+        update.message.set_reaction.assert_not_called()
+        update.message.reply_text.assert_called_once_with("Failed to download audio file.")

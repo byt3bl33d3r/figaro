@@ -1,4 +1,5 @@
 import { TASK_QUERY_INSTRUCTIONS, MEMORY_INSTRUCTIONS } from "../shared/prompts";
+import type { Attachment, ContentBlock } from "../types";
 
 export const SUPERVISOR_SYSTEM_PROMPT = `You are a task supervisor for the Figaro orchestration system. Your role is to:
 
@@ -55,14 +56,32 @@ ${MEMORY_INSTRUCTIONS}
 5. Delegate to a worker using \`delegate_to_worker\` with the enriched prompt
 6. Review the worker's result, summarize for the user, and **save useful learnings as memories**
 
-## Memory Best Practices
+## Memory Usage
 
-- **Always search before delegating.** Even a quick search can surface navigation tips, credentials hints, or past failures that save the worker time.
-- **Inject memories into the worker prompt.** Workers don't search memories themselves — you are responsible for including relevant context in the delegated prompt.
-- **Save after tasks complete.** When a task reveals useful information (site layout, login flows, gotchas, user preferences), save it as a memory for future tasks.
-- **Save failure patterns.** When a task fails and you discover why, save the root cause and fix so future healer tasks benefit.
-- **Use collections to organize.** Use descriptive collections like \`"sites"\`, \`"users"\`, \`"errors"\`, \`"workflows"\` to keep memories organized and searchable.
-- **Keep memories atomic.** Save one insight per memory rather than dumping entire task results. Specific, actionable memories are more useful than general summaries.
+### Collections
+Use these standard collections when saving memories:
+- \`"sites"\` — Site-specific knowledge: URLs, login flows, navigation patterns, cookie banners, CAPTCHAs, layout quirks
+- \`"users"\` — User preferences: formatting preferences, default options, frequently requested tasks
+- \`"errors"\` — Failure patterns: what went wrong, root cause, and what fixed it
+- \`"workflows"\` — Multi-step procedures: proven sequences of actions for recurring task types
+
+### When to Search (BEFORE delegating)
+Extract keywords from the task and run targeted searches:
+- **Site name or domain** — \`figaro.search_memories('amazon.com', collection='sites')\` to find navigation tips, known issues
+- **Task type** — \`figaro.search_memories('price comparison', collection='workflows')\` to find proven approaches
+- **User name or channel** — \`figaro.search_memories('telegram user Alex', collection='users')\` to find preferences
+- **Error context** (for healer tasks) — \`figaro.search_memories('timeout on checkout page', collection='errors')\` to find past fixes
+- Run 1-3 targeted searches, not one generic query. Specific queries return better results.
+
+### When to Save (AFTER task completes)
+After reviewing a worker's result, save any NEW information that would help future tasks:
+- **Site discovery** — "amazon.com requires dismissing a cookie banner before search works" → \`collection='sites'\`
+- **Navigation pattern** — "To reach account settings on X.com: click profile icon → Settings and Privacy → Account" → \`collection='sites'\`
+- **User preference** — "User prefers results formatted as bullet points with prices in USD" → \`collection='users'\`
+- **Failure fix** — "Login failed because the site redirects to a CAPTCHA after 3 rapid attempts. Fix: add 2s delay between retries" → \`collection='errors'\`
+- **Working workflow** — "For flight price checks: open Google Flights, enter route, set date range, sort by price, extract top 5" → \`collection='workflows'\`
+- Save one insight per memory. Be specific and actionable — write it as an instruction a future worker could follow.
+- Do NOT save: task results themselves, temporary data, or information already in an existing memory.
 
 ## Important Notes
 
@@ -80,7 +99,7 @@ export function formatSupervisorPrompt(
   options: Record<string, unknown>,
   sourceMetadata?: Record<string, unknown> | null,
   clientId?: string,
-): string {
+): string | ContentBlock[] {
   const source = (options.source as string) ?? "unknown";
   const contextParts: string[] = [`Source: ${source}`];
   if (clientId) {
@@ -94,26 +113,55 @@ export function formatSupervisorPrompt(
 
   const context = contextParts.join("\n");
 
+  let formattedPrompt: string;
+
   // Optimization and healer tasks already contain full instructions
   if (source === "optimizer" || source === "healer") {
-    return `<task_context>\n${context}\n</task_context>\n\n${prompt}`;
+    formattedPrompt = `<task_context>\n${context}\n</task_context>\n\n${prompt}`;
+  } else {
+    // Build gateway-specific instructions
+    let channelInstructions = "";
+    if (channel) {
+      channelInstructions =
+        "\n\nThis task was received from a messaging channel. " +
+        "You can use send_screenshot to send screenshots directly to the user.";
+    }
+
+    formattedPrompt =
+      `<task_context>\n${context}\n</task_context>\n\n` +
+      `<user_request>\n${prompt}\n</user_request>\n\n` +
+      `First, search memories for relevant context (site tips, user preferences, past errors). ` +
+      `Then either:\n` +
+      `1. Ask clarifying questions if needed (use AskUserQuestion tool)\n` +
+      `2. Delegate to a worker with an optimized prompt that includes relevant memories (use delegate_to_worker)\n` +
+      `3. Handle it directly if it doesn't require browser automation\n` +
+      `After the task completes, save any new learnings as memories.` +
+      channelInstructions;
   }
 
-  // Build gateway-specific instructions
-  let channelInstructions = "";
-  if (channel) {
-    channelInstructions =
-      "\n\nThis task was received from a messaging channel. " +
-      "You can use send_screenshot to send screenshots directly to the user.";
+  // Check for attachments
+  const attachments = options.attachments as Attachment[] | undefined;
+  if (attachments?.length) {
+    const blocks: ContentBlock[] = [{ type: "text", text: formattedPrompt }];
+    for (const attachment of attachments) {
+      if (attachment.type === "image") {
+        blocks.push({
+          type: "image",
+          source: {
+            type: "base64",
+            media_type: attachment.media_type,
+            data: attachment.data,
+          },
+        });
+      } else {
+        blocks.push({
+          type: "text",
+          text: `[Attached file: ${attachment.filename || "document"}]`,
+        });
+      }
+    }
+    return blocks;
   }
 
-  return (
-    `<task_context>\n${context}\n</task_context>\n\n` +
-    `<user_request>\n${prompt}\n</user_request>\n\n` +
-    `Analyze this request and either:\n` +
-    `1. Ask clarifying questions if needed (use AskUserQuestion tool)\n` +
-    `2. Delegate to a worker with an optimized prompt (use delegate_to_worker)\n` +
-    `3. Handle it directly if it doesn't require browser automation` +
-    channelInstructions
-  );
+  return formattedPrompt;
 }

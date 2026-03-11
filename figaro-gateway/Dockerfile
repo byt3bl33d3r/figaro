@@ -17,11 +17,12 @@ RUN uv build /app/figaro-nats --out-dir /wheels \
 RUN uv export --frozen --no-emit-project --no-hashes --no-dev > /tmp/requirements.txt && \
     pip wheel -r /tmp/requirements.txt -w /wheels
 
-# Runtime stage
-FROM python:3.14-slim-bookworm
+# Runtime stage — trixie has OpenSSL 3.5+ needed to pass Cloudflare TLS fingerprinting to use Claude's built in Voice mode
+FROM python:3.14-slim-trixie
 
 RUN apt-get update && apt-get install --no-install-recommends -y \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # Install from wheels (mount temporarily so deps don't stay in image)

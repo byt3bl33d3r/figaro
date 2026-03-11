@@ -22,6 +22,10 @@ Key principles:
 
 When adding new features or modifying existing ones, always ask: "What happens if this task runs for 2 hours?" If the answer involves a timeout killing it while it's still making progress, the design is wrong.
 
+## Bug Fixing Process
+
+When I report a bug, don't start by trying to fix it. Instead, start by writing a test that reproduces the bug. Then, have subagents try to fix the bug and prove it with a passing test.
+
 ## Code Style
 
 - **Use f-strings for all string interpolation.** No `%s`-style formatting or `.format()` calls — always use f-strings.
@@ -402,6 +406,8 @@ shellcheck <file>.sh     # Lint (required)
 | `GATEWAY_NATS_URL` | Gateway | NATS server URL |
 | `GATEWAY_TELEGRAM_BOT_TOKEN` | Gateway | Telegram bot token |
 | `GATEWAY_TELEGRAM_ALLOWED_CHAT_IDS` | Gateway | Allowed Telegram chat IDs (JSON array) |
+| `GATEWAY_STT_BASE_URL` | Gateway | STT WebSocket base URL (default: wss://claude.ai) |
+| `GATEWAY_STT_CREDENTIALS_PATH` | Gateway | Path to Claude credentials file for STT OAuth token (default: ~/.claude/.credentials.json) |
 | `VITE_NATS_WS_URL` | UI | NATS WebSocket URL (default: ws://localhost:8443) |
 | `OTEL_EXPORTER_OTLP_ENDPOINT` | Orchestrator, Worker, Gateway | OTLP endpoint for trace export (tracing disabled if unset) |
 | `VITE_OTEL_EXPORTER_OTLP_ENDPOINT` | UI | OTLP endpoint for browser trace export (tracing disabled if unset) |

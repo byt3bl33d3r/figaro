@@ -39,6 +39,8 @@ async def run_gateway() -> None:
         telegram = TelegramChannel(
             bot_token=settings.telegram_bot_token,
             allowed_chat_ids=settings.telegram_allowed_chat_ids,
+            stt_base_url=settings.stt_base_url,
+            stt_credentials_path=settings.stt_credentials_path,
         )
         registry.register(telegram)
         logger.info("Telegram channel registered")

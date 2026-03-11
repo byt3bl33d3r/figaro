@@ -5,8 +5,9 @@ import base64
 import io
 import logging
 from collections.abc import Awaitable, Callable
+from pathlib import Path
 
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, Update
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Message, ReactionTypeEmoji, Update
 from telegramify_markdown import convert as md_to_telegram
 from telegram.ext import (
     Application,
@@ -16,7 +17,32 @@ from telegram.ext import (
     filters,
 )
 
+from figaro_gateway.stt import TranscriptionError, load_oauth_token, transcribe_audio
+
 logger = logging.getLogger(__name__)
+
+MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024  # 20 MB
+
+
+def _extract_prompt(
+    text: str,
+    chat_type: str,
+    bot_username: str,
+    default_prompt: str | None = None,
+) -> str | None:
+    """Extract the task prompt from a message based on chat type and mention.
+
+    Returns the prompt string, or None if the bot was not addressed.
+    An empty string means the bot was addressed but no prompt was provided.
+    """
+    mention = f"@{bot_username}"
+    if chat_type == "private":
+        return text.strip() if text.strip() else default_prompt or ""
+    if mention.lower() in text.lower():
+        mention_idx = text.lower().find(mention.lower())
+        prompt = text[mention_idx + len(mention) :].strip()
+        return prompt if prompt else default_prompt or ""
+    return None
 
 
 class TelegramBot:
@@ -26,15 +52,19 @@ class TelegramBot:
         self,
         bot_token: str,
         allowed_chat_ids: list[int],
+        stt_base_url: str = "wss://claude.ai",
+        stt_credentials_path: Path | None = None,
     ) -> None:
         self._bot_token = bot_token
         self._allowed_chat_ids = set(allowed_chat_ids)
+        self._stt_base_url = stt_base_url
+        self._stt_credentials_path = stt_credentials_path or Path.home() / ".claude" / ".credentials.json"
         self._app: Application | None = None
         self._bot_username: str | None = None
         self._running = False
 
         # Callbacks
-        self._message_callback: Callable[[int, str], Awaitable[None]] | None = None
+        self._message_callback: Callable[[int, str, list[dict] | None], Awaitable[None]] | None = None
 
         # Pending questions (for ask_user tool)
         # Maps question_id -> (chat_id, message_id, future)
@@ -42,12 +72,12 @@ class TelegramBot:
 
     def on_message(
         self,
-        callback: Callable[[int, str], Awaitable[None]],
+        callback: Callable[[int, str, list[dict] | None], Awaitable[None]],
     ) -> None:
         """
         Set callback for when a new message is received.
 
-        The callback receives (chat_id, message_text).
+        The callback receives (chat_id, message_text, attachments).
         """
         self._message_callback = callback
 
@@ -74,6 +104,22 @@ class TelegramBot:
             MessageHandler(
                 filters.TEXT & ~filters.COMMAND & ~filters.REPLY,
                 self._handle_mention,
+            )
+        )
+
+        # Handle voice messages and audio attachments (for STT transcription)
+        self._app.add_handler(
+            MessageHandler(
+                (filters.VOICE | filters.AUDIO) & ~filters.COMMAND,
+                self._handle_voice,
+            )
+        )
+
+        # Handle photo and document messages (for tasks with attachments)
+        self._app.add_handler(
+            MessageHandler(
+                (filters.PHOTO | filters.Document.ALL) & ~filters.COMMAND,
+                self._handle_photo,
             )
         )
 
@@ -392,30 +438,18 @@ class TelegramBot:
             return
 
         chat_id = message.chat_id
-        text = message.text
-
         if chat_id not in self._allowed_chat_ids:
             return
 
         if not self._bot_username:
             return
 
-        # In private chats, treat the entire message as a task prompt.
-        # In group chats, require an explicit @mention.
-        mention = f"@{self._bot_username}"
-        prompt = None
-
-        if message.chat.type == "private":
-            prompt = text.strip()
-        elif mention.lower() in text.lower():
-            # Extract prompt (everything after the mention)
-            mention_idx = text.lower().find(mention.lower())
-            prompt = text[mention_idx + len(mention) :].strip()
-
+        prompt = _extract_prompt(message.text, message.chat.type, self._bot_username)
         if prompt is None:
             return  # Bot not mentioned in group chat, ignore
 
         if not prompt:
+            mention = f"@{self._bot_username}"
             await message.reply_text(
                 f"Please provide a task description after mentioning me.\n"
                 f"Example: {mention} Check the price on amazon.com"
@@ -427,8 +461,147 @@ class TelegramBot:
             return
 
         try:
-            # Call the message callback
-            await self._message_callback(chat_id, prompt)
+            await self._message_callback(chat_id, prompt, None)
         except Exception:
             logger.exception("Error handling Telegram message")
             await message.reply_text("Error processing message.")
+
+    async def _handle_voice(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """Handle voice messages and audio attachments — transcribe via STT."""
+        message = update.message
+        if not message:
+            return
+
+        chat_id = message.chat_id
+        if chat_id not in self._allowed_chat_ids:
+            return
+
+        # Load OAuth token (per-request for natural token refresh)
+        token = load_oauth_token(self._stt_credentials_path)
+        if token is None:
+            await message.reply_text("Voice messages can't be processed — STT credentials not configured.")
+            return
+
+        # Download the audio file
+        try:
+            audio = message.voice or message.audio
+            if not audio:
+                return
+            file = await audio.get_file()
+            file_bytes = await file.download_as_bytearray()
+        except Exception:
+            logger.exception("Failed to download voice/audio file")
+            await message.reply_text("Failed to download audio file.")
+            return
+
+        if len(file_bytes) > MAX_ATTACHMENT_BYTES:
+            await message.reply_text("Audio file is too large (max 20MB).")
+            return
+
+        # Transcribe
+        try:
+            transcript = await transcribe_audio(
+                audio_data=bytes(file_bytes),
+                oauth_token=token,
+                base_url=self._stt_base_url,
+            )
+        except TranscriptionError:
+            logger.exception("Voice transcription failed")
+            await message.reply_text("Failed to transcribe voice message.")
+            return
+
+        if not transcript.strip():
+            await message.reply_text("No speech detected in the audio.")
+            return
+
+        await message.set_reaction([ReactionTypeEmoji("👀")])
+
+        if not self._message_callback:
+            await message.reply_text("Task processing is not configured.")
+            return
+
+        try:
+            await self._message_callback(chat_id, transcript.strip(), None)
+        except Exception:
+            logger.exception("Error handling transcribed voice message")
+            await message.reply_text("Error processing voice message.")
+
+    async def _handle_photo(
+        self,
+        update: Update,
+        context: ContextTypes.DEFAULT_TYPE,
+    ) -> None:
+        """Handle photo and document messages to create tasks with attachments."""
+        message = update.message
+        if not message:
+            return
+
+        chat_id = message.chat_id
+        if chat_id not in self._allowed_chat_ids:
+            return
+
+        if not self._bot_username:
+            return
+
+        # Check mention/prompt before downloading (avoid wasted work in group chats)
+        prompt = _extract_prompt(
+            message.caption or "",
+            message.chat.type,
+            self._bot_username,
+            default_prompt="Please analyze this attachment",
+        )
+        if prompt is None:
+            return  # Not mentioned in group chat
+
+        if not self._message_callback:
+            await message.reply_text("Task processing is not configured.")
+            return
+
+        # Download and encode attachment
+        attachment: dict | None = None
+        try:
+            if message.photo:
+                # Get largest photo
+                photo = message.photo[-1]
+                file = await photo.get_file()
+                file_bytes = await file.download_as_bytearray()
+                if len(file_bytes) > MAX_ATTACHMENT_BYTES:
+                    logger.warning(f"Photo too large ({len(file_bytes)} bytes), skipping")
+                    await message.reply_text("File is too large (max 20MB).")
+                    return
+                attachment = {
+                    "type": "image",
+                    "media_type": "image/jpeg",
+                    "data": base64.b64encode(bytes(file_bytes)).decode(),
+                    "filename": file.file_path.split("/")[-1] if file.file_path else "photo.jpg",
+                }
+            elif message.document:
+                doc = message.document
+                file = await doc.get_file()
+                file_bytes = await file.download_as_bytearray()
+                if len(file_bytes) > MAX_ATTACHMENT_BYTES:
+                    logger.warning(f"Document too large ({len(file_bytes)} bytes), skipping")
+                    await message.reply_text("File is too large (max 20MB).")
+                    return
+                media_type = doc.mime_type or "application/octet-stream"
+                attachment = {
+                    "type": "image" if media_type.startswith("image/") else "document",
+                    "media_type": media_type,
+                    "data": base64.b64encode(bytes(file_bytes)).decode(),
+                    "filename": doc.file_name or "document",
+                }
+        except Exception:
+            logger.exception("Failed to download attachment")
+            await message.reply_text("Failed to process attachment.")
+            return
+
+        try:
+            attachments = [attachment] if attachment else None
+            await self._message_callback(chat_id, prompt, attachments)
+        except Exception:
+            logger.exception("Error handling Telegram attachment")
+            await message.reply_text("Error processing attachment.")

@@ -23,12 +23,29 @@ export interface HeartbeatPayload {
   status?: string;
 }
 
+/** Attachment from gateway channels (photos, documents). */
+export interface Attachment {
+  type: "image" | "document";
+  media_type: string;
+  data: string;
+  filename?: string;
+}
+
+/** Content block types for Claude API multimodal prompts. */
+export type TextBlock = { type: "text"; text: string };
+export type ImageBlock = {
+  type: "image";
+  source: { type: "base64"; media_type: string; data: string };
+};
+export type ContentBlock = TextBlock | ImageBlock;
+
 /** Options embedded in a task assignment. */
 export interface TaskOptions {
   permission_mode?: string;
   max_turns?: number;
   start_url?: string;
   self_healing?: boolean;
+  attachments?: Attachment[];
 }
 
 /** Received on figaro.worker.{worker_id}.task from the orchestrator. */

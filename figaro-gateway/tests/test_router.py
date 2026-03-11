@@ -123,6 +123,27 @@ class TestNatsRouter:
             },
         )
 
+    async def test_message_handler_publishes_attachments(self, router, registry, mock_conn):
+        """Test that incoming channel messages with attachments include them in NATS payload."""
+        ch = _make_mock_channel("telegram")
+        registry.register(ch)
+        await router.start()
+
+        message_handler = ch.on_message.call_args.args[0]
+        attachments = [{"type": "image", "media_type": "image/jpeg", "data": "abc123"}]
+        await message_handler("456", "check this", None, attachments)
+
+        mock_conn.publish.assert_any_call(
+            "figaro.gateway.telegram.task",
+            {
+                "channel": "telegram",
+                "chat_id": "456",
+                "text": "check this",
+                "task_id": None,
+                "attachments": attachments,
+            },
+        )
+
     async def test_stop_stops_channels(self, router, registry, mock_conn):
         """Test that stop() stops all channels."""
         ch = _make_mock_channel("telegram")

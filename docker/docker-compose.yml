@@ -128,6 +128,8 @@ services:
         condition: service_healthy
     env_file:
       - ../.env
+    volumes:
+      - ~/.claude/.credentials.json:/home/gateway/.claude/.credentials.json:ro # This is only required for Voice message transcription
     environment:
       - GATEWAY_NATS_URL=nats://nats:4222
     networks:
